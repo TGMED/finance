@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+{% block title %}{{ student.name }} — TGM Finance{% endblock %}
+{% block page_title %}{{ student.name }}{% endblock %}
+{% block page_sub %}Student commission profile{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ student.name }}</h1>
+    <p>
+      <a href="{{ url_for('university_detail', uid=student.university_id) }}" style="color:var(--teal);">
+        {{ student.university.name }}
+      </a>
+      {% if student.program %} &mdash; {{ student.program }}{% endif %}
+    </p>
+  </div>
+  <div style="display:flex;gap:10px;">
+    <button class="btn ghost" onclick="document.getElementById('dlg-edit').showModal()">Edit</button>
+    {% if session.get('user_role') in ('Admin','MD/CEO') %}
+    <form method="POST" action="{{ url_for('student_delete', sid=student.id) }}"
+          onsubmit="return confirm('Delete this student record?')">
+      <button type="submit" class="btn danger">Delete</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Commission highlight -->
+<div class="comm-highlight">
+  <div class="label">Total Commission Due</div>
+  <div class="amount">{{ student.commission_amount | money(student.currency) }}</div>
+  <div class="rate">
+    {{ student.tuition_amount | money(student.currency) }} tuition &times;
+    {{ student.effective_rate | pct }}{% if student.commission_rate is not none %} (custom rate){% else %} (university default){% endif %}
+  </div>
+  <div class="comm-row">
+    <div class="comm-mini">
+      <div class="cm-label">Collected</div>
+      <div class="cm-value green">{{ student.amount_collected | money(student.currency) }}</div>
+    </div>
+    <div class="comm-mini">
+      <div class="cm-label">Outstanding</div>
+      <div class="cm-value {% if student.outstanding > 0 %}red{% else %}green{% endif %}">
+        {{ student.outstanding | money(student.currency) }}
+      </div>
+    </div>
+    <div class="comm-mini">
+      <div class="cm-label">Collected %</div>
+      <div class="cm-value teal">{{ student.collection_pct | round(1) }}%</div>
+    </div>
+  </div>
+  <!-- Progress bar -->
+  {% set pct = student.collection_pct %}
+  <div style="margin-top:16px;">
+    <div style="display:flex;justify-content:space-between;font-size:12px;color:rgba(255,255,255,.4);margin-bottom:6px;">
+      <span>Collection progress</span>
+      <span>{{ pct | round(1) }}%</span>
+    </div>
+    <div style="background:rgba(255,255,255,.1);border-radius:4px;height:6px;overflow:hidden;">
+      <div style="width:{{ pct | round(1) }}%;height:100%;border-radius:4px;background:{% if pct >= 100 %}#86efac{% elif pct > 50 %}var(--teal-soft){% else %}#f59e0b{% endif %};"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Record commission collection -->
+{% if student.outstanding > 0 %}
+<div class="panel" style="margin-bottom:24px;border-left:4px solid var(--teal);">
+  <div class="panel-head">
+    <span class="panel-title">Record Commission Receipt</span>
+  </div>
+  <div class="panel-body">
+    <form method="POST" action="{{ url_for('student_collect', sid=student.id) }}" style="display:flex;gap:12px;align-items:flex-end;">
+      <div class="form-group" style="flex:1;margin:0;">
+        <label>Amount Received ({{ student.currency }})</label>
+        <input type="number" name="amount" step="0.01" min="0.01"
+               max="{{ student.outstanding }}" placeholder="Enter amount received" required>
+      </div>
+      <button type="submit" class="btn teal">Record Receipt</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<div class="detail-grid">
+  <!-- Personal info -->
+  <div class="info-card">
+    <h3>Personal Details</h3>
+    <div class="info-row">
+      <span class="label">Full Name</span>
+      <span class="value">{{ student.name }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Nationality</span>
+      <span class="value">{{ student.nationality or '—' }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Email</span>
+      <span class="value">{{ student.email or '—' }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Phone</span>
+      <span class="value">{{ student.phone or '—' }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Status</span>
+      <span class="value"><span class="badge b-{{ student.status }}">{{ student.status }}</span></span>
+    </div>
+    <div class="info-row">
+      <span class="label">Added</span>
+      <span class="value muted">{{ student.created_at.strftime('%d %b %Y') }}</span>
+    </div>
+    {% if student.notes %}
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);">
+      {{ student.notes }}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Academic + commission details -->
+  <div class="info-card">
+    <h3>Academic &amp; Commission</h3>
+    <div class="info-row">
+      <span class="label">University</span>
+      <span class="value">
+        <a href="{{ url_for('university_detail', uid=student.university_id) }}" style="color:var(--teal);">
+          {{ student.university.name }}
+        </a>
+      </span>
+    </div>
+    <div class="info-row">
+      <span class="label">Program</span>
+      <span class="value">{{ student.program or '—' }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Intake</span>
+      <span class="value">{{ student.intake or '—' }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Tuition</span>
+      <span class="value"><strong>{{ student.tuition_amount | money(student.currency) }}</strong></span>
+    </div>
+    <div class="info-row">
+      <span class="label">Commission Rate</span>
+      <span class="value">
+        {{ student.effective_rate | pct }}
+        {% if student.commission_rate is none %}
+          <span class="muted" style="font-size:12px;">(from university)</span>
+        {% else %}
+          <span style="color:var(--teal);font-size:12px;">(custom)</span>
+        {% endif %}
+      </span>
+    </div>
+    <div class="info-row">
+      <span class="label">Commission Amount</span>
+      <span class="value"><strong style="color:var(--teal);">{{ student.commission_amount | money(student.currency) }}</strong></span>
+    </div>
+    <div class="info-row">
+      <span class="label">Amount Collected</span>
+      <span class="value" style="color:var(--green);">{{ student.amount_collected | money(student.currency) }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Outstanding</span>
+      <span class="value" style="color:{% if student.outstanding > 0 %}var(--red){% else %}var(--green){% endif %};">
+        {{ student.outstanding | money(student.currency) }}
+      </span>
+    </div>
+  </div>
+</div>
+
+<!-- Edit dialog -->
+<dialog id="dlg-edit">
+  <form method="POST" action="{{ url_for('student_edit', sid=student.id) }}">
+    <div class="modal-head">
+      <h3>Edit Student</h3>
+      <button type="button" class="modal-close" onclick="this.closest('dialog').close()">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Full Name *</label>
+          <input type="text" name="name" required value="{{ student.name }}">
+        </div>
+        <div class="form-group">
+          <label>Nationality</label>
+          <input type="text" name="nationality" value="{{ student.nationality or '' }}">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>University *</label>
+        <select name="university_id" required>
+          {% for u in universities %}
+            <option value="{{ u.id }}" {% if u.id == student.university_id %}selected{% endif %}>
+              {{ u.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Program / Course</label>
+          <input type="text" name="program" value="{{ student.program or '' }}">
+        </div>
+        <div class="form-group">
+          <label>Intake</label>
+          <input type="text" name="intake" value="{{ student.intake or '' }}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" name="email" value="{{ student.email or '' }}">
+        </div>
+        <div class="form-group">
+          <label>Phone</label>
+          <input type="text" name="phone" value="{{ student.phone or '' }}">
+        </div>
+      </div>
+      <div class="form-row cols-3">
+        <div class="form-group">
+          <label>Total Tuition</label>
+          <input type="number" name="tuition_amount" step="0.01" min="0" value="{{ student.tuition_amount }}">
+        </div>
+        <div class="form-group">
+          <label>Currency</label>
+          <select name="currency">
+            {% for cur in ['USD','GBP','EUR','CAD','AUD','NGN'] %}
+              <option value="{{ cur }}" {% if cur == student.currency %}selected{% endif %}>{{ cur }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Commission Rate % <span class="muted">(blank = university)</span></label>
+          <input type="number" name="commission_rate" step="0.01" min="0" max="100"
+                 value="{{ student.commission_rate if student.commission_rate is not none else '' }}">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select name="status">
+          {% for st in ['Prospect','Applied','Enrolled','Completed','Cancelled'] %}
+            <option value="{{ st }}" {% if st == student.status %}selected{% endif %}>{{ st }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea name="notes">{{ student.notes or '' }}</textarea>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn ghost" onclick="this.closest('dialog').close()">Cancel</button>
+      <button type="submit" class="btn teal">Save Changes</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}

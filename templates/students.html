@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}Students — TGM Finance{% endblock %}
+{% block page_title %}Students{% endblock %}
+{% block page_sub %}Track students, tuition, and commission earnings{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Students</h1>
+    <p>{{ students | length }} student{{ 's' if students | length != 1 }} shown</p>
+  </div>
+  <button class="btn teal" onclick="document.getElementById('dlg-add-student').showModal()">
+    + Add Student
+  </button>
+</div>
+
+<!-- Filters -->
+<form method="GET" class="toolbar">
+  <div class="search-wrap">
+    <span class="search-icon">&#128269;</span>
+    <input type="text" name="q" value="{{ q }}" placeholder="Search name, email, program…" style="background:#fff;">
+  </div>
+  <select name="university" class="filter-sel" style="background:#fff;">
+    <option value="">All Universities</option>
+    {% for u in universities %}
+      <option value="{{ u.id }}" {% if uni_filter == u.id | string %}selected{% endif %}>{{ u.name }}</option>
+    {% endfor %}
+  </select>
+  <select name="status" class="filter-sel" style="background:#fff;">
+    <option value="">All Statuses</option>
+    {% for st in ['Prospect','Applied','Enrolled','Completed','Cancelled'] %}
+      <option value="{{ st }}" {% if status_filter == st %}selected{% endif %}>{{ st }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn ghost">Filter</button>
+  {% if q or status_filter or uni_filter %}
+    <a href="{{ url_for('students') }}" class="btn ghost">Clear</a>
+  {% endif %}
+</form>
+
+{% if students %}
+<div class="panel">
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Student</th>
+          <th>University</th>
+          <th>Program / Intake</th>
+          <th class="num">Tuition</th>
+          <th class="num">Rate</th>
+          <th class="num">Commission</th>
+          <th class="num">Collected</th>
+          <th class="num">Outstanding</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in students %}
+        <tr>
+          <td>
+            <a href="{{ url_for('student_detail', sid=s.id) }}">{{ s.name }}</a>
+            {% if s.nationality %}<div class="muted" style="font-size:12px;">{{ s.nationality }}</div>{% endif %}
+          </td>
+          <td>
+            <a href="{{ url_for('university_detail', uid=s.university_id) }}" style="color:var(--muted);font-weight:500;">
+              {{ s.university.name }}
+            </a>
+          </td>
+          <td>
+            {{ s.program or '—' }}
+            {% if s.intake %}<div class="muted" style="font-size:12px;">{{ s.intake }}</div>{% endif %}
+          </td>
+          <td class="num">{{ s.tuition_amount | money(s.currency) }}</td>
+          <td class="num">{{ s.effective_rate | pct }}
+            {% if s.commission_rate is not none %}
+              <span title="Custom rate" style="color:var(--teal);font-size:11px;">✦</span>
+            {% endif %}
+          </td>
+          <td class="num"><strong>{{ s.commission_amount | money(s.currency) }}</strong></td>
+          <td class="num" style="color:var(--green);">{{ s.amount_collected | money(s.currency) }}</td>
+          <td class="num" style="color:{% if s.outstanding > 0 %}var(--amber){% else %}var(--green){% endif %};">
+            {{ s.outstanding | money(s.currency) }}
+          </td>
+          <td><span class="badge b-{{ s.status }}">{{ s.status }}</span></td>
+          <td><a href="{{ url_for('student_detail', sid=s.id) }}" class="btn ghost sm">View</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+  <div class="panel">
+    <div class="empty">
+      <div class="empty-icon" style="font-size:32px;color:var(--line);">&#9726;</div>
+      <p>No students found.<br>
+        <a href="#" onclick="document.getElementById('dlg-add-student').showModal()" style="color:var(--teal);">Add your first student</a>
+      </p>
+    </div>
+  </div>
+{% endif %}
+
+<!-- Add Student dialog -->
+<dialog id="dlg-add-student">
+  <form method="POST" action="{{ url_for('student_add') }}">
+    <div class="modal-head">
+      <h3>Add Student</h3>
+      <button type="button" class="modal-close" onclick="this.closest('dialog').close()">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Full Name *</label>
+          <input type="text" name="name" required placeholder="e.g. Amara Osei">
+        </div>
+        <div class="form-group">
+          <label>Nationality</label>
+          <input type="text" name="nationality" placeholder="e.g. Nigerian">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>University *</label>
+        <select name="university_id" required>
+          <option value="">— Select university —</option>
+          {% for u in universities %}
+            <option value="{{ u.id }}">{{ u.name }} ({{ u.commission_rate | pct }} default)</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Program / Course</label>
+          <input type="text" name="program" placeholder="e.g. MSc Computer Science">
+        </div>
+        <div class="form-group">
+          <label>Intake</label>
+          <input type="text" name="intake" placeholder="e.g. September 2025">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" name="email" placeholder="student@email.com">
+        </div>
+        <div class="form-group">
+          <label>Phone</label>
+          <input type="text" name="phone" placeholder="+234 ...">
+        </div>
+      </div>
+      <div class="form-row cols-3">
+        <div class="form-group">
+          <label>Total Tuition</label>
+          <input type="number" name="tuition_amount" step="0.01" min="0" placeholder="0.00">
+        </div>
+        <div class="form-group">
+          <label>Currency</label>
+          <select name="currency">
+            <option value="USD">USD ($)</option>
+            <option value="GBP">GBP (£)</option>
+            <option value="EUR">EUR (€)</option>
+            <option value="CAD">CAD</option>
+            <option value="AUD">AUD</option>
+            <option value="NGN">NGN (₦)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Commission Rate % <span class="muted">(leave blank = university default)</span></label>
+          <input type="number" name="commission_rate" step="0.01" min="0" max="100" placeholder="e.g. 10">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select name="status">
+          {% for st in ['Prospect','Applied','Enrolled','Completed','Cancelled'] %}
+            <option value="{{ st }}">{{ st }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea name="notes" placeholder="Any additional notes…"></textarea>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn ghost" onclick="this.closest('dialog').close()">Cancel</button>
+      <button type="submit" class="btn teal">Add Student</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}

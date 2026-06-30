@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}Universities — TGM Finance{% endblock %}
+{% block page_title %}Universities{% endblock %}
+{% block page_sub %}Partner institutions and commission agreements{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Universities</h1>
+    <p>{{ universities | length }} institution{{ 's' if universities | length != 1 }}</p>
+  </div>
+  <button class="btn teal" onclick="document.getElementById('dlg-add-uni').showModal()">
+    + Add University
+  </button>
+</div>
+
+<!-- Filters -->
+<form method="GET" class="toolbar" style="margin-bottom:20px;">
+  <div class="search-wrap">
+    <span class="search-icon">&#128269;</span>
+    <input type="text" name="q" value="{{ q }}" placeholder="Search name or country…" style="background:#fff;">
+  </div>
+  <select name="region" class="filter-sel" style="background:#fff;">
+    <option value="">All Regions</option>
+    {% for r in ['UK','Canada','North America','Global'] %}
+      <option value="{{ r }}" {% if region_filter == r %}selected{% endif %}>{{ r }}</option>
+    {% endfor %}
+  </select>
+  <select name="status" class="filter-sel" style="background:#fff;">
+    <option value="">All Statuses</option>
+    {% for s in ['Active','Expired','Terminated','Unknown'] %}
+      <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn ghost">Filter</button>
+  {% if q or region_filter or status_filter %}
+    <a href="{{ url_for('universities') }}" class="btn ghost">Clear</a>
+  {% endif %}
+</form>
+
+{% if universities %}
+<div class="panel">
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Institution</th>
+          <th>Region</th>
+          <th>Commission Rate</th>
+          <th>Territory</th>
+          <th>Contract Period</th>
+          <th>Status</th>
+          <th>Agreement</th>
+          <th class="num">Students</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in universities %}
+        <tr>
+          <td>
+            <a href="{{ url_for('university_detail', uid=u.id) }}">{{ u.name }}</a>
+            {% if u.city %}<div class="muted" style="font-size:12px;">{{ u.city }}{% if u.country %}, {{ u.country }}{% endif %}</div>{% elif u.country %}<div class="muted" style="font-size:12px;">{{ u.country }}</div>{% endif %}
+          </td>
+          <td>{{ u.region or '—' }}</td>
+          <td>
+            {% if u.commission_rate > 0 %}
+              <strong>{{ u.commission_rate | pct }}</strong>
+            {% elif u.commission_notes %}
+              <span class="muted" style="font-size:12px;">See details</span>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td style="max-width:160px;font-size:12.5px;">{{ (u.territory or '—') | truncate(50, true, '…') }}</td>
+          <td style="font-size:12.5px;">
+            {% if u.contract_start or u.contract_end %}
+              {{ u.contract_start or '' }}{% if u.contract_start and u.contract_end %} → {% endif %}{{ u.contract_end or '' }}
+            {% else %}—{% endif %}
+          </td>
+          <td><span class="badge cs-{{ u.contract_status or 'Unknown' }}">{{ u.contract_status or 'Unknown' }}</span></td>
+          <td>
+            {% if u.agreement_signed %}
+              <span class="badge b-yes">&#10003; Signed</span>
+            {% else %}
+              <span class="badge b-no">Pending</span>
+            {% endif %}
+          </td>
+          <td class="num">{{ u.active_students | length }}</td>
+          <td><a href="{{ url_for('university_detail', uid=u.id) }}" class="btn ghost sm">View</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+  <div class="panel">
+    <div class="empty">
+      <div class="empty-icon" style="font-size:32px;color:var(--line);">&#9726;</div>
+      <p>No universities found.<br>
+        <a href="#" onclick="document.getElementById('dlg-add-uni').showModal()" style="color:var(--teal);">Add your first university</a>
+      </p>
+    </div>
+  </div>
+{% endif %}
+
+<!-- Add University dialog -->
+<dialog id="dlg-add-uni">
+  <form method="POST" action="{{ url_for('university_add') }}">
+    <div class="modal-head">
+      <h3>Add University</h3>
+      <button type="button" class="modal-close" onclick="this.closest('dialog').close()">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>University Name *</label>
+        <input type="text" name="name" required placeholder="e.g. University of Manchester">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Country</label>
+          <input type="text" name="country" placeholder="e.g. United Kingdom">
+        </div>
+        <div class="form-group">
+          <label>City</label>
+          <input type="text" name="city" placeholder="e.g. Manchester">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Region</label>
+          <select name="region">
+            <option value="">— Select —</option>
+            <option value="UK">UK</option>
+            <option value="Canada">Canada</option>
+            <option value="North America">North America</option>
+            <option value="Global">Global</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Contract Status</label>
+          <select name="contract_status">
+            <option value="Active">Active</option>
+            <option value="Expired">Expired</option>
+            <option value="Terminated">Terminated</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Commission Rate (%)</label>
+          <input type="number" name="commission_rate" step="0.01" min="0" max="100" placeholder="e.g. 15">
+        </div>
+        <div class="form-group">
+          <label>Duration</label>
+          <input type="text" name="duration" placeholder="e.g. 3 years">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Contract Start</label>
+          <input type="text" name="contract_start" placeholder="e.g. 01/09/2024">
+        </div>
+        <div class="form-group">
+          <label>Contract End</label>
+          <input type="text" name="contract_end" placeholder="e.g. 01/09/2027 or Indefinite">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Territory</label>
+        <input type="text" name="territory" placeholder="e.g. Nigeria, Ghana, Uganda">
+      </div>
+      <div class="form-group">
+        <label>Commission Details</label>
+        <textarea name="commission_notes" placeholder="Full description of commission structure…"></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Contact Name</label>
+          <input type="text" name="contact_name">
+        </div>
+        <div class="form-group">
+          <label>Contact Email</label>
+          <input type="email" name="contact_email">
+        </div>
+      </div>
+      <div class="form-group">
+        <div class="check-row">
+          <input type="checkbox" name="agreement_signed" id="ag-signed">
+          <label for="ag-signed" style="margin:0;">Commission agreement signed</label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea name="notes" placeholder="Any additional notes…"></textarea>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn ghost" onclick="this.closest('dialog').close()">Cancel</button>
+      <button type="submit" class="btn teal">Add University</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}

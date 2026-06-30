@@ -1,0 +1,402 @@
+{% extends "base.html" %}
+{% block title %}{{ university.name }} — TGM Finance{% endblock %}
+{% block page_title %}{{ university.name }}{% endblock %}
+{% block page_sub %}University profile &amp; commission summary{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ university.name }}</h1>
+    <p>
+      {% if university.city %}{{ university.city }}{% if university.country %}, {% endif %}{% endif %}
+      {{ university.country or '' }}
+      {% if university.region %} &mdash; <span style="color:var(--teal);">{{ university.region }}</span>{% endif %}
+    </p>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center;">
+    <span class="badge cs-{{ university.contract_status or 'Unknown' }}" style="font-size:13px;padding:5px 14px;">
+      {{ university.contract_status or 'Unknown' }}
+    </span>
+    <button class="btn ghost" onclick="document.getElementById('dlg-edit-uni').showModal()">Edit Profile</button>
+    {% if session.get('user_role') in ('Admin','MD/CEO') %}
+    <form method="POST" action="{{ url_for('university_delete', uid=university.id) }}"
+          onsubmit="return confirm('Delete this university and all its student records?')">
+      <button type="submit" class="btn danger">Delete</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Commission highlight -->
+<div class="comm-highlight" style="margin-bottom:24px;">
+  <div class="label">Total Commission Expected</div>
+  <div class="amount">{{ university.total_expected | money }}</div>
+  <div class="rate">
+    {% if university.commission_rate > 0 %}
+      Default rate: {{ university.commission_rate | pct }} of tuition
+    {% else %}
+      Commission rate: see details below
+    {% endif %}
+  </div>
+  <div class="comm-row">
+    <div class="comm-mini">
+      <div class="cm-label">Active Students</div>
+      <div class="cm-value">{{ university.active_students | length }}</div>
+    </div>
+    <div class="comm-mini">
+      <div class="cm-label">Collected</div>
+      <div class="cm-value green">{{ university.total_collected | money }}</div>
+    </div>
+    <div class="comm-mini">
+      <div class="cm-label">Outstanding</div>
+      <div class="cm-value {% if university.total_outstanding > 0 %}red{% else %}green{% endif %}">
+        {{ university.total_outstanding | money }}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Four info cards -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
+
+  <!-- Contract details -->
+  <div class="info-card">
+    <h3>Contract Details</h3>
+    <div class="info-row">
+      <span class="label">Status</span>
+      <span class="value"><span class="badge cs-{{ university.contract_status or 'Unknown' }}">{{ university.contract_status or '—' }}</span></span>
+    </div>
+    <div class="info-row">
+      <span class="label">Duration</span>
+      <span class="value">{{ university.duration or '—' }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Start Date</span>
+      <span class="value">{{ university.contract_start or '—' }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">End Date</span>
+      <span class="value">{{ university.contract_end or '—' }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Review Date</span>
+      <span class="value">{{ university.review_date or '—' }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Renewal Option</span>
+      <span class="value">{{ university.renewal_options or '—' }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Agreement Signed</span>
+      <span class="value">
+        {% if university.agreement_signed %}
+          <span class="badge b-yes">&#10003; Signed</span>
+        {% else %}
+          <span class="badge b-no">Pending</span>
+        {% endif %}
+      </span>
+    </div>
+    <div class="info-row">
+      <span class="label">Expansion Requested</span>
+      <span class="value">
+        {% if university.expansion_requested %}
+          <span class="badge b-yes">Yes</span>
+        {% else %}
+          <span class="muted">No</span>
+        {% endif %}
+      </span>
+    </div>
+    <div class="info-row">
+      <span class="label">Added</span>
+      <span class="value muted">{{ university.created_at.strftime('%d %b %Y') }}</span>
+    </div>
+  </div>
+
+  <!-- Commission structure -->
+  <div class="info-card">
+    <h3>Commission Structure</h3>
+    <div class="info-row">
+      <span class="label">Primary Rate</span>
+      <span class="value">
+        {% if university.commission_rate > 0 %}
+          <strong style="color:var(--teal);">{{ university.commission_rate | pct }}</strong>
+        {% else %}
+          <span class="muted">See details</span>
+        {% endif %}
+      </span>
+    </div>
+    <div class="info-row">
+      <span class="label">Territory</span>
+      <span class="value" style="text-align:right;font-size:12.5px;">{{ university.territory or '—' }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Target Students</span>
+      <span class="value">{{ university.target_students or '—' }}</span>
+    </div>
+    {% if university.commission_notes %}
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);">
+      <div style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:8px;">Full Commission Details</div>
+      <div style="font-size:13px;line-height:1.65;color:var(--text);">{{ university.commission_notes }}</div>
+    </div>
+    {% endif %}
+    {% if university.incentives %}
+    <div style="margin-top:12px;padding:12px;background:var(--teal-dim);border-radius:9px;">
+      <div style="font-size:11.5px;font-weight:700;color:var(--teal);margin-bottom:4px;letter-spacing:.5px;">INCENTIVES / BONUS</div>
+      <div style="font-size:13px;">{{ university.incentives }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Contact info -->
+  <div class="info-card">
+    <h3>Contact Information</h3>
+    <div class="info-row">
+      <span class="label">Contact Name</span>
+      <span class="value">{{ university.contact_name or '—' }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Email</span>
+      <span class="value">{{ university.contact_email or '—' }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Phone</span>
+      <span class="value">{{ university.contact_phone or '—' }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Website</span>
+      <span class="value">
+        {% if university.website %}
+          <a href="{{ university.website }}" target="_blank" style="color:var(--teal);">Visit &#8599;</a>
+        {% else %}—{% endif %}
+      </span>
+    </div>
+    {% if university.notes %}
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);line-height:1.6;">
+      {{ university.notes }}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Commission agreements -->
+  <div class="info-card">
+    <h3>Commission Documents</h3>
+    {% if documents %}
+      {% for doc in documents %}
+      <div class="info-row" style="align-items:center;">
+        <div>
+          <span class="doc-ext ext-{{ doc.file_ext }}">{{ doc.file_ext }}</span>
+          <span style="font-size:13px;margin-left:8px;">{{ doc.original_filename }}</span>
+          {% if doc.description %}
+            <div style="font-size:12px;color:var(--muted);margin-top:2px;">{{ doc.description }}</div>
+          {% endif %}
+          <div style="font-size:11.5px;color:var(--muted);margin-top:2px;">{{ doc.size_display }} &bull; {{ doc.uploaded_at.strftime('%d %b %Y') }}</div>
+        </div>
+        <div style="display:flex;gap:6px;">
+          <a href="{{ url_for('legal_download', doc_id=doc.id) }}" class="btn ghost sm">&#8595;</a>
+          <form method="POST" action="{{ url_for('legal_delete', doc_id=doc.id) }}"
+                onsubmit="return confirm('Delete this document?')" style="display:inline;">
+            <button type="submit" class="btn danger sm">&#10005;</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+      <div style="margin-top:12px;">
+        <a href="{{ url_for('legal') }}?university={{ university.id }}" class="btn ghost sm">Manage in Legal tab</a>
+      </div>
+    {% else %}
+      <div class="empty" style="padding:24px 0;">
+        <p style="font-size:13px;">No documents uploaded yet.<br>
+          <a href="{{ url_for('legal') }}?university={{ university.id }}" style="color:var(--teal);">Upload commission agreement</a>
+        </p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Students table -->
+<div class="panel">
+  <div class="panel-head">
+    <span class="panel-title">Students at {{ university.name }}</span>
+    <div style="display:flex;gap:8px;">
+      <a href="{{ url_for('students') }}?university={{ university.id }}" class="btn ghost sm">View in Students</a>
+    </div>
+  </div>
+  {% if university.students %}
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Student</th>
+          <th>Program</th>
+          <th>Intake</th>
+          <th class="num">Tuition</th>
+          <th class="num">Rate</th>
+          <th class="num">Commission</th>
+          <th class="num">Collected</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in university.students | sort(attribute='created_at', reverse=true) %}
+        <tr>
+          <td>
+            <a href="{{ url_for('student_detail', sid=s.id) }}">{{ s.name }}</a>
+            {% if s.nationality %}<div class="muted" style="font-size:12px;">{{ s.nationality }}</div>{% endif %}
+          </td>
+          <td>{{ s.program or '—' }}</td>
+          <td>{{ s.intake or '—' }}</td>
+          <td class="num">{{ s.tuition_amount | money(s.currency) }}</td>
+          <td class="num">{{ s.effective_rate | pct }}</td>
+          <td class="num"><strong>{{ s.commission_amount | money(s.currency) }}</strong></td>
+          <td class="num" style="color:var(--green);">{{ s.amount_collected | money(s.currency) }}</td>
+          <td><span class="badge b-{{ s.status }}">{{ s.status }}</span></td>
+          <td><a href="{{ url_for('student_detail', sid=s.id) }}" class="btn ghost sm">View</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <div class="empty">
+      <div class="empty-icon" style="font-size:32px;color:var(--line);">&#9726;</div>
+      <p>No students linked to this university yet.<br>
+        <a href="{{ url_for('students') }}" style="color:var(--teal);">Add a student</a>
+      </p>
+    </div>
+  {% endif %}
+</div>
+
+<!-- Edit dialog -->
+<dialog id="dlg-edit-uni">
+  <form method="POST" action="{{ url_for('university_edit', uid=university.id) }}">
+    <div class="modal-head">
+      <h3>Edit University</h3>
+      <button type="button" class="modal-close" onclick="this.closest('dialog').close()">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>University Name *</label>
+        <input type="text" name="name" required value="{{ university.name }}">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Country</label>
+          <input type="text" name="country" value="{{ university.country or '' }}">
+        </div>
+        <div class="form-group">
+          <label>City</label>
+          <input type="text" name="city" value="{{ university.city or '' }}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Region</label>
+          <select name="region">
+            <option value="">— Select —</option>
+            {% for r in ['UK','Canada','North America','Global'] %}
+              <option value="{{ r }}" {% if r == university.region %}selected{% endif %}>{{ r }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Contract Status</label>
+          <select name="contract_status">
+            {% for s in ['Active','Expired','Terminated','Unknown'] %}
+              <option value="{{ s }}" {% if s == (university.contract_status or 'Active') %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Commission Rate (%)</label>
+          <input type="number" name="commission_rate" step="0.01" min="0" value="{{ university.commission_rate }}">
+        </div>
+        <div class="form-group">
+          <label>Duration</label>
+          <input type="text" name="duration" value="{{ university.duration or '' }}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Contract Start</label>
+          <input type="text" name="contract_start" value="{{ university.contract_start or '' }}">
+        </div>
+        <div class="form-group">
+          <label>Contract End</label>
+          <input type="text" name="contract_end" value="{{ university.contract_end or '' }}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Review Date</label>
+          <input type="text" name="review_date" value="{{ university.review_date or '' }}">
+        </div>
+        <div class="form-group">
+          <label>Renewal Options</label>
+          <input type="text" name="renewal_options" value="{{ university.renewal_options or '' }}">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Territory</label>
+        <input type="text" name="territory" value="{{ university.territory or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Target Students</label>
+        <input type="text" name="target_students" value="{{ university.target_students or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Commission Details</label>
+        <textarea name="commission_notes">{{ university.commission_notes or '' }}</textarea>
+      </div>
+      <div class="form-group">
+        <label>Incentives / Bonus</label>
+        <textarea name="incentives" style="min-height:60px;">{{ university.incentives or '' }}</textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Contact Name</label>
+          <input type="text" name="contact_name" value="{{ university.contact_name or '' }}">
+        </div>
+        <div class="form-group">
+          <label>Contact Email</label>
+          <input type="email" name="contact_email" value="{{ university.contact_email or '' }}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Contact Phone</label>
+          <input type="text" name="contact_phone" value="{{ university.contact_phone or '' }}">
+        </div>
+        <div class="form-group">
+          <label>Website</label>
+          <input type="url" name="website" value="{{ university.website or '' }}">
+        </div>
+      </div>
+      <div class="form-group">
+        <div style="display:flex;gap:24px;">
+          <div class="check-row">
+            <input type="checkbox" name="agreement_signed" id="edit-ag"
+              {% if university.agreement_signed %}checked{% endif %}>
+            <label for="edit-ag" style="margin:0;">Agreement signed</label>
+          </div>
+          <div class="check-row">
+            <input type="checkbox" name="expansion_requested" id="edit-exp"
+              {% if university.expansion_requested %}checked{% endif %}>
+            <label for="edit-exp" style="margin:0;">Expansion requested</label>
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea name="notes">{{ university.notes or '' }}</textarea>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn ghost" onclick="this.closest('dialog').close()">Cancel</button>
+      <button type="submit" class="btn teal">Save Changes</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}

@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — TGM Finance{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block page_sub %}Commission overview across all universities{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Commission Overview</h1>
+    <p>Tracking earnings from all universities and students</p>
+  </div>
+</div>
+
+<!-- KPI row -->
+<div class="stats-grid">
+  <div class="stat">
+    <div class="stat-label">Universities</div>
+    <div class="stat-value teal">{{ total_universities }}</div>
+    <div class="stat-meta">Partner institutions</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Active Students</div>
+    <div class="stat-value">{{ total_students }}</div>
+    <div class="stat-meta">Excluding cancelled</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Total Commission Due</div>
+    <div class="stat-value teal">{{ total_expected | money }}</div>
+    <div class="stat-meta">Across all students</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Commission Collected</div>
+    <div class="stat-value green">{{ total_collected | money }}</div>
+    <div class="stat-meta">Received to date</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Outstanding</div>
+    <div class="stat-value {% if total_outstanding > 0 %}amber{% else %}green{% endif %}">
+      {{ total_outstanding | money }}
+    </div>
+    <div class="stat-meta">Still to collect</div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:24px;">
+
+  <!-- University breakdown -->
+  <div class="panel">
+    <div class="panel-head">
+      <span class="panel-title">Earnings by University</span>
+      <a href="{{ url_for('universities') }}" class="btn ghost sm">View all</a>
+    </div>
+    <div class="panel-body">
+      {% if uni_rows %}
+        {% set max_exp = uni_rows[0].expected if uni_rows else 1 %}
+        {% for row in uni_rows %}
+          {% set bar_pct = (row.expected / max_exp * 100) if max_exp > 0 else 0 %}
+          <div class="bar-row">
+            <div class="bar-label">
+              <a href="{{ url_for('university_detail', uid=row.university.id) }}">{{ row.university.name }}</a>
+              <div class="muted" style="font-size:11.5px;font-weight:400;">{{ row.students }} student{{ 's' if row.students != 1 }}</div>
+            </div>
+            <div class="bar-track">
+              <div class="bar-fill" style="width:{{ bar_pct | round(1) }}%"></div>
+            </div>
+            <div class="bar-val">
+              <div>{{ row.expected | money }}</div>
+              <div style="font-size:11px;color:var(--green);">{{ row.collected | money }} collected</div>
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty">
+          <div class="empty-icon" style="font-size:32px;color:var(--line);">&#9726;</div>
+          <p>No universities added yet.<br>
+            <a href="{{ url_for('universities') }}" style="color:var(--teal);">Add your first university</a>
+          </p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Status breakdown + recent -->
+  <div>
+    <div class="panel" style="margin-bottom:20px;">
+      <div class="panel-head">
+        <span class="panel-title">Student Status</span>
+      </div>
+      <div class="panel-body" style="padding:12px 22px;">
+        {% set statuses = ['Prospect','Applied','Enrolled','Completed','Cancelled'] %}
+        {% for st in statuses %}
+          {% set cnt = status_counts.get(st, 0) %}
+          {% if cnt > 0 %}
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);">
+              <span class="badge b-{{ st }}">{{ st }}</span>
+              <strong>{{ cnt }}</strong>
+            </div>
+          {% endif %}
+        {% endfor %}
+        {% if not status_counts %}
+          <div class="empty" style="padding:30px 0;">
+            <p>No students yet.</p>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">Recent Students</span>
+        <a href="{{ url_for('students') }}" class="btn ghost sm">View all</a>
+      </div>
+      <div class="panel-body" style="padding:6px 0 0;">
+        {% for s in recent %}
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:11px 22px;border-bottom:1px solid var(--line);">
+            <div>
+              <a href="{{ url_for('student_detail', sid=s.id) }}" style="font-weight:600;color:var(--teal);text-decoration:none;font-size:13.5px;">{{ s.name }}</a>
+              <div style="font-size:11.5px;color:var(--muted);">{{ s.university.name }}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:13px;font-weight:700;">{{ s.commission_amount | money(s.currency) }}</div>
+              <span class="badge b-{{ s.status }}" style="font-size:11px;">{{ s.status }}</span>
+            </div>
+          </div>
+        {% else %}
+          <div class="empty" style="padding:30px 24px;"><p>No students yet.</p></div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Legal — TGM Finance{% endblock %}
+{% block page_title %}Legal{% endblock %}
+{% block page_sub %}Commission agreement documents per university{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Legal Documents</h1>
+    <p>{{ documents | length }} document{{ 's' if documents | length != 1 }} uploaded</p>
+  </div>
+  <button class="btn teal" onclick="document.getElementById('dlg-upload').showModal()">
+    &#8593; Upload Document
+  </button>
+</div>
+
+<!-- University filter -->
+<form method="GET" class="toolbar" style="margin-bottom:20px;">
+  <select name="university" class="filter-sel" style="background:#fff;min-width:220px;">
+    <option value="">All Universities</option>
+    {% for u in universities %}
+      <option value="{{ u.id }}" {% if uni_filter == u.id | string %}selected{% endif %}>{{ u.name }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn ghost">Filter</button>
+  {% if uni_filter %}<a href="{{ url_for('legal') }}" class="btn ghost">Clear</a>{% endif %}
+</form>
+
+{% if documents %}
+<div class="panel">
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Document</th>
+          <th>University</th>
+          <th>Description</th>
+          <th>Size</th>
+          <th>Uploaded By</th>
+          <th>Date</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for doc in documents %}
+        <tr>
+          <td>
+            <span class="doc-ext ext-{{ doc.file_ext }}">{{ doc.file_ext }}</span>
+            <span style="margin-left:8px;font-weight:500;">{{ doc.original_filename }}</span>
+          </td>
+          <td>
+            <a href="{{ url_for('university_detail', uid=doc.university_id) }}" style="color:var(--muted);font-weight:500;">
+              {{ doc.university.name }}
+            </a>
+          </td>
+          <td>{{ doc.description or '—' }}</td>
+          <td class="muted">{{ doc.size_display }}</td>
+          <td class="muted">{{ doc.uploaded_by or '—' }}</td>
+          <td class="muted">{{ doc.uploaded_at.strftime('%d %b %Y') }}</td>
+          <td>
+            <div style="display:flex;gap:6px;">
+              <a href="{{ url_for('legal_download', doc_id=doc.id) }}" class="btn ghost sm">&#8595; Download</a>
+              <form method="POST" action="{{ url_for('legal_delete', doc_id=doc.id) }}"
+                    onsubmit="return confirm('Delete this document?')" style="display:inline;">
+                <button type="submit" class="btn danger sm">Delete</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+  <div class="panel">
+    <div class="empty">
+      <div class="empty-icon" style="font-size:32px;color:var(--line);">&#9726;</div>
+      <p>No documents uploaded yet.<br>
+        <a href="#" onclick="document.getElementById('dlg-upload').showModal()" style="color:var(--teal);">
+          Upload your first commission agreement
+        </a>
+      </p>
+    </div>
+  </div>
+{% endif %}
+
+<!-- Grouped view by university -->
+{% if universities and not uni_filter %}
+<div class="panel" style="margin-top:8px;">
+  <div class="panel-head">
+    <span class="panel-title">Agreement Status by University</span>
+  </div>
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>University</th>
+          <th>Agreement</th>
+          <th class="num">Documents</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in universities %}
+        <tr>
+          <td>
+            <a href="{{ url_for('university_detail', uid=u.id) }}">{{ u.name }}</a>
+            <div class="muted" style="font-size:12px;">{{ u.country or '' }}</div>
+          </td>
+          <td>
+            {% if u.agreement_signed %}
+              <span class="badge b-yes">&#10003; Signed</span>
+            {% else %}
+              <span class="badge b-no">Pending</span>
+            {% endif %}
+          </td>
+          <td class="num">{{ u.documents | length }}</td>
+          <td>
+            <a href="{{ url_for('legal') }}?university={{ u.id }}" class="btn ghost sm">View docs</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Upload dialog -->
+<dialog id="dlg-upload">
+  <form method="POST" action="{{ url_for('legal_upload') }}" enctype="multipart/form-data">
+    <div class="modal-head">
+      <h3>Upload Commission Document</h3>
+      <button type="button" class="modal-close" onclick="this.closest('dialog').close()">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>University *</label>
+        <select name="university_id" required>
+          <option value="">— Select university —</option>
+          {% for u in universities %}
+            <option value="{{ u.id }}">{{ u.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Document *</label>
+        <input type="file" name="document" required accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+        <div class="muted" style="font-size:12px;margin-top:5px;">Accepted: PDF, DOC, DOCX, JPG, PNG (max 16 MB)</div>
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <input type="text" name="description" placeholder="e.g. Signed commission agreement 2025">
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn ghost" onclick="this.closest('dialog').close()">Cancel</button>
+      <button type="submit" class="btn teal">&#8593; Upload</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
