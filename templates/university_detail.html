@@ -213,6 +213,23 @@
   </div>
 </div>
 
+<!-- Additional Comments -->
+<div class="panel" style="margin-bottom:24px;">
+  <div class="panel-head">
+    <span class="panel-title">Additional Comments</span>
+  </div>
+  <div class="panel-body">
+    <form method="POST" action="{{ url_for('university_comments', uid=university.id) }}">
+      <textarea name="additional_comments" rows="5"
+        style="width:100%;resize:vertical;border:1px solid var(--line);border-radius:8px;padding:12px;font-size:13.5px;font-family:inherit;color:var(--text);background:#fafafa;outline:none;line-height:1.6;"
+        placeholder="Add any additional notes, observations, or comments about this university…">{{ university.additional_comments or '' }}</textarea>
+      <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+        <button type="submit" class="btn teal">Save Comments</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- Students table -->
 <div class="panel">
   <div class="panel-head">

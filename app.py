@@ -67,11 +67,12 @@ class University(db.Model):
     review_date         = db.Column(db.String(40))
     target_students     = db.Column(db.String(80))
     territory           = db.Column(db.Text)
-    expansion_requested = db.Column(db.Boolean, default=False)
-    contract_status     = db.Column(db.String(40), default="Active")
-    renewal_options     = db.Column(db.String(200))
-    duration            = db.Column(db.String(60))
-    region              = db.Column(db.String(60))
+    expansion_requested  = db.Column(db.Boolean, default=False)
+    contract_status      = db.Column(db.String(40), default="Active")
+    renewal_options      = db.Column(db.String(200))
+    duration             = db.Column(db.String(60))
+    region               = db.Column(db.String(60))
+    additional_comments  = db.Column(db.Text)
 
     students  = db.relationship("Student",           backref="university", lazy=True, cascade="all, delete-orphan")
     documents = db.relationship("CommissionDocument", backref="university", lazy=True, cascade="all, delete-orphan")
@@ -263,9 +264,10 @@ def ensure_columns():
             "territory":           "TEXT",
             "expansion_requested": "BOOLEAN DEFAULT 0",
             "contract_status":     "VARCHAR(40) DEFAULT 'Active'",
-            "renewal_options":     "VARCHAR(200)",
-            "duration":            "VARCHAR(60)",
-            "region":              "VARCHAR(60)",
+            "renewal_options":       "VARCHAR(200)",
+            "duration":              "VARCHAR(60)",
+            "region":                "VARCHAR(60)",
+            "additional_comments":   "TEXT",
         }
         for col, dtype in new_cols.items():
             if col not in existing:
@@ -471,6 +473,16 @@ def university_edit(uid):
     log_activity("Updated", "University", f"Edited: {u.name}")
     db.session.commit()
     flash("University updated.", "success")
+    return redirect(url_for("university_detail", uid=uid))
+
+
+@app.route("/universities/<int:uid>/comments", methods=["POST"])
+@login_required
+def university_comments(uid):
+    u = db.get_or_404(University, uid)
+    u.additional_comments = request.form.get("additional_comments", "").strip() or None
+    db.session.commit()
+    flash("Comments saved.", "success")
     return redirect(url_for("university_detail", uid=uid))
 
 
