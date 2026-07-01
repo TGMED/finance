@@ -14,9 +14,9 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "tgm-finance-dev-key-change-in-prod")
 
-db_url = os.environ.get("DATABASE_URL", "sqlite:///tgm_finance.db")
-if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
+db_url = os.environ.get("DATABASE_URL")
+if not db_url:
+    raise RuntimeError("DATABASE_URL environment variable is not set. Please configure your MySQL connection.")
 if db_url.startswith("mysql://"):
     db_url = db_url.replace("mysql://", "mysql+pymysql://", 1)
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
@@ -242,17 +242,12 @@ def fmtdate_filter(v):
 # ── DB INIT ───────────────────────────────────────────────────────────────────
 
 def ensure_columns():
-    dialect = db.engine.dialect.name
     with db.engine.connect() as conn:
-        if dialect == "sqlite":
-            result = conn.execute(text("PRAGMA table_info(universities)"))
-            existing = {row[1] for row in result}
-        else:
-            result = conn.execute(text(
-                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
-                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'universities'"
-            ))
-            existing = {row[0] for row in result}
+        result = conn.execute(text(
+            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'universities'"
+        ))
+        existing = {row[0] for row in result}
         new_cols = {
             "commission_notes":    "TEXT",
             "incentives":          "TEXT",
