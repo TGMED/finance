@@ -1,9 +1,9 @@
-import os, uuid
+import os, uuid, csv, io
 from datetime import datetime
 from functools import wraps
 from sqlalchemy import text
 from flask import (Flask, render_template, request, redirect, url_for,
-                   session, flash, send_from_directory)
+                   session, flash, send_from_directory, Response)
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -479,6 +479,120 @@ def university_delete(uid):
     return redirect(url_for("universities"))
 
 
+# ── UNIVERSITY IMPORT / EXPORT ────────────────────────────────────────────────
+
+UNI_FIELDS = [
+    "name","country","city","region","commission_rate","commission_notes",
+    "incentives","contract_start","contract_end","review_date","target_students",
+    "territory","expansion_requested","contract_status","renewal_options",
+    "duration","contact_name","contact_email","contact_phone","website",
+    "agreement_signed","notes",
+]
+
+@app.route("/universities/export")
+@login_required
+def universities_export():
+    unis = University.query.order_by(University.name).all()
+    si = io.StringIO()
+    w = csv.DictWriter(si, fieldnames=UNI_FIELDS)
+    w.writeheader()
+    for u in unis:
+        w.writerow({
+            "name": u.name, "country": u.country or "", "city": u.city or "",
+            "region": u.region or "", "commission_rate": u.commission_rate or 0,
+            "commission_notes": u.commission_notes or "", "incentives": u.incentives or "",
+            "contract_start": u.contract_start or "", "contract_end": u.contract_end or "",
+            "review_date": u.review_date or "", "target_students": u.target_students or "",
+            "territory": u.territory or "", "expansion_requested": int(u.expansion_requested or 0),
+            "contract_status": u.contract_status or "Active",
+            "renewal_options": u.renewal_options or "", "duration": u.duration or "",
+            "contact_name": u.contact_name or "", "contact_email": u.contact_email or "",
+            "contact_phone": u.contact_phone or "", "website": u.website or "",
+            "agreement_signed": int(u.agreement_signed or 0), "notes": u.notes or "",
+        })
+    output = si.getvalue()
+    return Response(output, mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment;filename=universities.csv"})
+
+
+@app.route("/universities/import-template")
+@login_required
+def universities_import_template():
+    si = io.StringIO()
+    w = csv.DictWriter(si, fieldnames=UNI_FIELDS)
+    w.writeheader()
+    w.writerow({
+        "name": "Example University", "country": "United Kingdom", "city": "London",
+        "region": "UK", "commission_rate": "15", "commission_notes": "15% of first year tuition",
+        "incentives": "Bonus 2% if >20 students", "contract_start": "01/09/2024",
+        "contract_end": "01/09/2027", "review_date": "01/03/2026",
+        "target_students": "20 per year", "territory": "Nigeria, Ghana",
+        "expansion_requested": "0", "contract_status": "Active",
+        "renewal_options": "2 x 1 year", "duration": "3 years",
+        "contact_name": "Jane Smith", "contact_email": "j.smith@example.ac.uk",
+        "contact_phone": "+44 20 1234 5678", "website": "https://www.example.ac.uk",
+        "agreement_signed": "1", "notes": "Key partner for West Africa",
+    })
+    output = si.getvalue()
+    return Response(output, mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment;filename=universities_template.csv"})
+
+
+@app.route("/universities/import", methods=["POST"])
+@login_required
+def universities_import():
+    f = request.files.get("csv_file")
+    if not f or not f.filename.endswith(".csv"):
+        flash("Please upload a valid CSV file.", "error")
+        return redirect(url_for("universities"))
+    stream = io.StringIO(f.stream.read().decode("utf-8-sig"))
+    reader = csv.DictReader(stream)
+    added = skipped = 0
+    for row in reader:
+        name = (row.get("name") or "").strip()
+        if not name:
+            skipped += 1
+            continue
+        exists = University.query.filter_by(name=name).first()
+        if exists:
+            skipped += 1
+            continue
+        def _bool(v): return str(v).strip() in ("1", "true", "True", "yes", "Yes")
+        def _float(v):
+            try: return float(v)
+            except: return 0.0
+        u = University(
+            name=name,
+            country=(row.get("country") or "").strip() or None,
+            city=(row.get("city") or "").strip() or None,
+            region=(row.get("region") or "").strip() or None,
+            commission_rate=_float(row.get("commission_rate", 0)),
+            commission_notes=(row.get("commission_notes") or "").strip() or None,
+            incentives=(row.get("incentives") or "").strip() or None,
+            contract_start=(row.get("contract_start") or "").strip() or None,
+            contract_end=(row.get("contract_end") or "").strip() or None,
+            review_date=(row.get("review_date") or "").strip() or None,
+            target_students=(row.get("target_students") or "").strip() or None,
+            territory=(row.get("territory") or "").strip() or None,
+            expansion_requested=_bool(row.get("expansion_requested")),
+            contract_status=(row.get("contract_status") or "Active").strip(),
+            renewal_options=(row.get("renewal_options") or "").strip() or None,
+            duration=(row.get("duration") or "").strip() or None,
+            contact_name=(row.get("contact_name") or "").strip() or None,
+            contact_email=(row.get("contact_email") or "").strip() or None,
+            contact_phone=(row.get("contact_phone") or "").strip() or None,
+            website=(row.get("website") or "").strip() or None,
+            agreement_signed=_bool(row.get("agreement_signed")),
+            notes=(row.get("notes") or "").strip() or None,
+        )
+        db.session.add(u)
+        added += 1
+    db.session.commit()
+    log_activity("Imported", "Universities", f"Imported {added} universities via CSV")
+    flash(f"Import complete: {added} added, {skipped} skipped (duplicate or blank name).", "success")
+    return redirect(url_for("universities"))
+
+
 # ── STUDENTS ──────────────────────────────────────────────────────────────────
 
 @app.route("/students")
@@ -597,6 +711,106 @@ def student_delete(sid):
     db.session.delete(s)
     db.session.commit()
     flash(f"Student '{name}' deleted.", "success")
+    return redirect(url_for("students"))
+
+
+# ── STUDENT IMPORT / EXPORT ───────────────────────────────────────────────────
+
+STU_FIELDS = [
+    "name","nationality","email","phone","university_name",
+    "program","intake","tuition_amount","currency","commission_rate","status","notes",
+]
+
+@app.route("/students/export")
+@login_required
+def students_export():
+    stus = Student.query.order_by(Student.name).all()
+    si = io.StringIO()
+    w = csv.DictWriter(si, fieldnames=STU_FIELDS)
+    w.writeheader()
+    for s in stus:
+        w.writerow({
+            "name": s.name, "nationality": s.nationality or "",
+            "email": s.email or "", "phone": s.phone or "",
+            "university_name": s.university.name if s.university else "",
+            "program": s.program or "", "intake": s.intake or "",
+            "tuition_amount": s.tuition_amount or 0,
+            "currency": s.currency or "USD",
+            "commission_rate": s.commission_rate if s.commission_rate is not None else "",
+            "status": s.status or "Prospect", "notes": s.notes or "",
+        })
+    output = si.getvalue()
+    return Response(output, mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment;filename=students.csv"})
+
+
+@app.route("/students/import-template")
+@login_required
+def students_import_template():
+    si = io.StringIO()
+    w = csv.DictWriter(si, fieldnames=STU_FIELDS)
+    w.writeheader()
+    w.writerow({
+        "name": "John Doe", "nationality": "Nigerian", "email": "john@email.com",
+        "phone": "+234 800 000 0000", "university_name": "University of Manchester",
+        "program": "MSc Computer Science", "intake": "September 2025",
+        "tuition_amount": "25000", "currency": "GBP",
+        "commission_rate": "", "status": "Enrolled",
+        "notes": "Scholarship student",
+    })
+    output = si.getvalue()
+    return Response(output, mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment;filename=students_template.csv"})
+
+
+@app.route("/students/import", methods=["POST"])
+@login_required
+def students_import():
+    f = request.files.get("csv_file")
+    if not f or not f.filename.endswith(".csv"):
+        flash("Please upload a valid CSV file.", "error")
+        return redirect(url_for("students"))
+    stream = io.StringIO(f.stream.read().decode("utf-8-sig"))
+    reader = csv.DictReader(stream)
+    uni_cache = {u.name.lower(): u for u in University.query.all()}
+    added = skipped = 0
+    for row in reader:
+        name = (row.get("name") or "").strip()
+        uni_name = (row.get("university_name") or "").strip()
+        if not name or not uni_name:
+            skipped += 1
+            continue
+        uni = uni_cache.get(uni_name.lower())
+        if not uni:
+            skipped += 1
+            continue
+        def _float_or_none(v):
+            v = (v or "").strip()
+            if not v: return None
+            try: return float(v)
+            except: return None
+        def _float(v):
+            try: return float(v or 0)
+            except: return 0.0
+        s = Student(
+            name=name,
+            nationality=(row.get("nationality") or "").strip() or None,
+            email=(row.get("email") or "").strip() or None,
+            phone=(row.get("phone") or "").strip() or None,
+            university_id=uni.id,
+            program=(row.get("program") or "").strip() or None,
+            intake=(row.get("intake") or "").strip() or None,
+            tuition_amount=_float(row.get("tuition_amount")),
+            currency=(row.get("currency") or "USD").strip(),
+            commission_rate=_float_or_none(row.get("commission_rate")),
+            status=(row.get("status") or "Prospect").strip(),
+            notes=(row.get("notes") or "").strip() or None,
+        )
+        db.session.add(s)
+        added += 1
+    db.session.commit()
+    log_activity("Imported", "Students", f"Imported {added} students via CSV")
+    flash(f"Import complete: {added} added, {skipped} skipped (missing name, university not found, or blank row).", "success")
     return redirect(url_for("students"))
 
 

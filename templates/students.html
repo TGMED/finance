@@ -9,9 +9,12 @@
     <h1>Students</h1>
     <p>{{ students | length }} student{{ 's' if students | length != 1 }} shown</p>
   </div>
-  <button class="btn teal" onclick="document.getElementById('dlg-add-student').showModal()">
-    + Add Student
-  </button>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <a href="{{ url_for('students_export') }}" class="btn ghost">&#8595; Export CSV</a>
+    <a href="{{ url_for('students_import_template') }}" class="btn ghost">&#8681; Import Template</a>
+    <button class="btn ghost" onclick="document.getElementById('dlg-import-stu').showModal()">&#8593; Import CSV</button>
+    <button class="btn teal" onclick="document.getElementById('dlg-add-student').showModal()">+ Add Student</button>
+  </div>
 </div>
 
 <!-- Filters -->
@@ -101,6 +104,44 @@
     </div>
   </div>
 {% endif %}
+
+<!-- Import Students dialog -->
+<dialog id="dlg-import-stu">
+  <form method="POST" action="{{ url_for('students_import') }}" enctype="multipart/form-data">
+    <div class="modal-head">
+      <h3>Import Students from CSV</h3>
+      <button type="button" class="modal-close" onclick="this.closest('dialog').close()">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:var(--teal-dim);border-radius:10px;padding:14px 16px;margin-bottom:16px;font-size:13px;line-height:1.65;">
+        <strong>Required columns:</strong><br>
+        <code>name</code> (required) &bull; <code>nationality</code> &bull;
+        <code>email</code> &bull; <code>phone</code> &bull;
+        <code>university_name</code> (required — must match exactly) &bull;
+        <code>program</code> &bull; <code>intake</code> &bull;
+        <code>tuition_amount</code> (number) &bull;
+        <code>currency</code> (USD / GBP / EUR / CAD / AUD / NGN) &bull;
+        <code>commission_rate</code> (leave blank to use university default) &bull;
+        <code>status</code> (Prospect / Applied / Enrolled / Completed / Cancelled) &bull;
+        <code>notes</code>
+        <div style="margin-top:10px;">
+          <a href="{{ url_for('students_import_template') }}" style="color:var(--teal);font-weight:600;">
+            &#8681; Download template CSV with example row
+          </a>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>CSV File *</label>
+        <input type="file" name="csv_file" accept=".csv" required>
+        <div class="muted" style="font-size:12px;margin-top:5px;">Rows with unknown university names are skipped.</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn ghost" onclick="this.closest('dialog').close()">Cancel</button>
+      <button type="submit" class="btn teal">&#8593; Import</button>
+    </div>
+  </form>
+</dialog>
 
 <!-- Add Student dialog -->
 <dialog id="dlg-add-student">
