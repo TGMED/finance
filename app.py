@@ -330,6 +330,16 @@ def dashboard():
     total_outstanding= total_expected - total_collected
     total_students   = len(all_students)
 
+    currency_totals = {}
+    for cur in ["USD", "GBP", "EUR"]:
+        cur_students = [s for s in all_students if s.currency == cur]
+        due       = sum(s.commission_amount for s in cur_students)
+        collected = sum(s.amount_collected  for s in cur_students)
+        currency_totals[cur] = {
+            "due": due, "collected": collected, "outstanding": due - collected,
+            "students": len(cur_students),
+        }
+
     status_counts = {}
     for s in Student.query.all():
         status_counts[s.status] = status_counts.get(s.status, 0) + 1
@@ -358,6 +368,7 @@ def dashboard():
         status_counts=status_counts,
         uni_rows=uni_rows,
         recent=recent,
+        currency_totals=currency_totals,
     )
 
 
