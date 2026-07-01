@@ -243,11 +243,16 @@ def fmtdate_filter(v):
 
 def ensure_columns():
     with db.engine.connect() as conn:
-        result = conn.execute(text(
-            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
-            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'universities'"
-        ))
-        existing = {row[0] for row in result}
+        dialect = db.engine.dialect.name
+        if dialect == "sqlite":
+            result = conn.execute(text("PRAGMA table_info(universities)"))
+            existing = {row[1] for row in result}
+        else:
+            result = conn.execute(text(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'universities'"
+            ))
+            existing = {row[0] for row in result}
         new_cols = {
             "commission_notes":    "TEXT",
             "incentives":          "TEXT",
