@@ -1,5 +1,5 @@
 import os, uuid, csv, io, json
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 from sqlalchemy import text
 from flask import (Flask, render_template, request, redirect, url_for,
@@ -13,6 +13,11 @@ load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "tgm-finance-dev-key-change-in-prod")
+
+SESSION_TIMEOUT_MINUTES = int(os.environ.get("SESSION_TIMEOUT_MINUTES", 30))
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=SESSION_TIMEOUT_MINUTES)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 db_url = os.environ.get("DATABASE_URL")
 if not db_url:
@@ -416,6 +421,27 @@ def calculate_commission(uni, programme, year, tuition, student_count=1):
     return _eval_rule(rules, programme or "", year or 1, tuition or 0.0, student_count)
 
 
+# ── SESSION TIMEOUT ───────────────────────────────────────────────────────────
+
+@app.before_request
+def enforce_session_timeout():
+    if "user_id" not in session:
+        return
+    last_active = session.get("last_active")
+    now = datetime.utcnow()
+    if last_active:
+        try:
+            elapsed = now - datetime.fromisoformat(last_active)
+            if elapsed > timedelta(minutes=SESSION_TIMEOUT_MINUTES):
+                session.clear()
+                flash("Your session expired after inactivity. Please log in again.", "error")
+                from flask import request as _req
+                return redirect(url_for("login", next=_req.path))
+        except (ValueError, TypeError):
+            pass
+    session["last_active"] = now.isoformat()
+
+
 # ── AUTH ──────────────────────────────────────────────────────────────────────
 
 @app.route("/login", methods=["GET", "POST"])
@@ -428,9 +454,11 @@ def login():
         pw = request.form.get("password", "")
         u = User.query.filter(db.func.lower(User.email) == email).first()
         if u and u.check_password(pw):
-            session["user_id"]   = u.id
-            session["user_name"] = u.name
-            session["user_role"] = u.role
+            session.permanent = False
+            session["user_id"]    = u.id
+            session["user_name"]  = u.name
+            session["user_role"]  = u.role
+            session["last_active"] = datetime.utcnow().isoformat()
             return redirect(request.args.get("next") or url_for("dashboard"))
         error = "Invalid email or password."
     return render_template("login.html", error=error)
