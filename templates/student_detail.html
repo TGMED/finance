@@ -30,8 +30,12 @@
   <div class="label">Total Commission Due</div>
   <div class="amount">{{ student.commission_amount | money(student.currency) }}</div>
   <div class="rate">
-    {{ student.tuition_amount | money(student.currency) }} tuition &times;
-    {{ student.effective_rate | pct }}{% if student.commission_rate is not none %} (custom rate){% else %} (university default){% endif %}
+    {% if student.commission_amount_override is not none %}
+      Fixed amount &mdash; {{ comm_breakdown }}
+    {% else %}
+      {{ student.tuition_amount | money(student.currency) }} tuition &times;
+      {{ student.effective_rate | pct }}{% if student.commission_rate is not none %} (custom rate){% else %} (university default){% endif %}
+    {% endif %}
   </div>
   <div class="comm-row">
     <div class="comm-mini">
@@ -128,6 +132,14 @@
       </span>
     </div>
     <div class="info-row">
+      <span class="label">Programme Type</span>
+      <span class="value">{{ student.programme_category or '—' }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Year of Study</span>
+      <span class="value">Year {{ student.year_of_study or 1 }}</span>
+    </div>
+    <div class="info-row">
       <span class="label">Program</span>
       <span class="value">{{ student.program or '—' }}</span>
     </div>
@@ -140,20 +152,28 @@
       <span class="value"><strong>{{ student.tuition_amount | money(student.currency) }}</strong></span>
     </div>
     <div class="info-row">
-      <span class="label">Commission Rate</span>
-      <span class="value">
-        {{ student.effective_rate | pct }}
-        {% if student.commission_rate is none %}
-          <span class="muted" style="font-size:12px;">(from university)</span>
-        {% else %}
-          <span style="color:var(--teal);font-size:12px;">(custom)</span>
-        {% endif %}
-      </span>
+      <span class="label">Commission Basis</span>
+      <span class="value" style="font-size:12px;color:var(--muted);">{{ comm_breakdown }}</span>
     </div>
     <div class="info-row">
       <span class="label">Commission Amount</span>
-      <span class="value"><strong style="color:var(--teal);">{{ student.commission_amount | money(student.currency) }}</strong></span>
+      <span class="value"><strong style="color:var(--teal);">{{ student.commission_amount | money(student.currency) }}</strong>
+        {% if student.commission_amount_override is not none %}
+          <span style="font-size:11px;background:#dcfce7;color:#15803d;padding:1px 6px;border-radius:10px;margin-left:4px;">Calculated</span>
+        {% endif %}
+      </span>
     </div>
+    {% if comm_is_milestone and comm_milestones %}
+    <div style="margin-top:12px;padding:12px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;">
+      <div style="font-size:12px;font-weight:600;color:#15803d;margin-bottom:8px;">Payment Milestones</div>
+      {% for m in comm_milestones %}
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid #dcfce7;">
+        <span>{{ m.label }}</span>
+        <strong style="color:#15803d;">{{ m.amount | money(student.currency) }}</strong>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
     <div class="info-row">
       <span class="label">Amount Collected</span>
       <span class="value" style="color:var(--green);">{{ student.amount_collected | money(student.currency) }}</span>
@@ -197,6 +217,25 @@
       </div>
       <div class="form-row">
         <div class="form-group">
+          <label>Programme Category</label>
+          <select name="programme_category">
+            <option value="">— Select —</option>
+            {% for pc in programme_categories %}
+              <option value="{{ pc }}" {% if pc == student.programme_category %}selected{% endif %}>{{ pc }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Year of Study</label>
+          <select name="year_of_study">
+            {% for y in [1,2,3,4] %}
+              <option value="{{ y }}" {% if y == (student.year_of_study or 1) %}selected{% endif %}>Year {{ y }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
           <label>Program / Course</label>
           <input type="text" name="program" value="{{ student.program or '' }}">
         </div>
@@ -215,7 +254,7 @@
           <input type="text" name="phone" value="{{ student.phone or '' }}">
         </div>
       </div>
-      <div class="form-row cols-3">
+      <div class="form-row">
         <div class="form-group">
           <label>Total Tuition</label>
           <input type="number" name="tuition_amount" step="0.01" min="0" value="{{ student.tuition_amount }}">
@@ -227,6 +266,14 @@
               <option value="{{ cur }}" {% if cur == student.currency %}selected{% endif %}>{{ cur }}</option>
             {% endfor %}
           </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Commission Amount <span class="muted">(fixed/calculated)</span></label>
+          <input type="number" name="commission_amount_override" step="0.01" min="0"
+                 value="{{ student.commission_amount_override if student.commission_amount_override is not none else '' }}"
+                 placeholder="Leave blank to use rate">
         </div>
         <div class="form-group">
           <label>Commission Rate % <span class="muted">(blank = university)</span></label>

@@ -163,12 +163,32 @@
       </div>
       <div class="form-group">
         <label>University *</label>
-        <select name="university_id" required>
+        <select name="university_id" id="add-uni-sel" required onchange="resetCalc()">
           <option value="">— Select university —</option>
           {% for u in universities %}
-            <option value="{{ u.id }}">{{ u.name }} ({{ u.commission_rate | pct }} default)</option>
+            <option value="{{ u.id }}">{{ u.name }}</option>
           {% endfor %}
         </select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Programme Category</label>
+          <select name="programme_category" id="add-prog-cat" onchange="resetCalc()">
+            <option value="">— Select —</option>
+            {% for pc in programme_categories %}
+              <option value="{{ pc }}">{{ pc }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Year of Study</label>
+          <select name="year_of_study" id="add-year" onchange="resetCalc()">
+            <option value="1">Year 1</option>
+            <option value="2">Year 2</option>
+            <option value="3">Year 3</option>
+            <option value="4">Year 4</option>
+          </select>
+        </div>
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -190,10 +210,10 @@
           <input type="text" name="phone" placeholder="+234 ...">
         </div>
       </div>
-      <div class="form-row cols-3">
+      <div class="form-row">
         <div class="form-group">
-          <label>Total Tuition</label>
-          <input type="number" name="tuition_amount" step="0.01" min="0" placeholder="0.00">
+          <label>Total Tuition Paid</label>
+          <input type="number" name="tuition_amount" id="add-tuition" step="0.01" min="0" placeholder="0.00" oninput="resetCalc()">
         </div>
         <div class="form-group">
           <label>Currency</label>
@@ -206,9 +226,29 @@
             <option value="NGN">NGN (₦)</option>
           </select>
         </div>
-        <div class="form-group">
-          <label>Commission Rate % <span class="muted">(leave blank = university default)</span></label>
-          <input type="number" name="commission_rate" step="0.01" min="0" max="100" placeholder="e.g. 10">
+      </div>
+      <!-- Commission calculator -->
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px 16px;margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <span style="font-size:13px;font-weight:600;color:#15803d;">Commission Calculator</span>
+          <button type="button" onclick="calcCommission()" class="btn teal" style="padding:5px 14px;font-size:12px;">
+            &#8635; Calculate
+          </button>
+        </div>
+        <div id="calc-result-text" style="font-size:12.5px;color:var(--muted);margin-bottom:8px;">
+          Select university, programme, year &amp; tuition above, then click Calculate.
+        </div>
+        <div id="calc-milestone-list"></div>
+        <div class="form-row" style="margin-top:8px;margin-bottom:0;">
+          <div class="form-group" style="margin-bottom:0;">
+            <label style="font-size:12px;">Commission Amount <span class="muted">(auto-filled or override)</span></label>
+            <input type="number" name="commission_amount_override" id="add-comm-amt"
+                   step="0.01" min="0" placeholder="Calculated automatically">
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label style="font-size:12px;">Or enter Rate % <span class="muted">(overrides amount)</span></label>
+            <input type="number" name="commission_rate" step="0.01" min="0" max="100" placeholder="e.g. 15">
+          </div>
         </div>
       </div>
       <div class="form-group">
@@ -230,4 +270,58 @@
     </div>
   </form>
 </dialog>
+
+<script>
+function resetCalc() {
+  document.getElementById('calc-result-text').style.color = 'var(--muted)';
+  document.getElementById('calc-result-text').textContent = 'Select university, programme, year & tuition above, then click Calculate.';
+  document.getElementById('calc-milestone-list').innerHTML = '';
+}
+
+function calcCommission() {
+  const uniId    = document.getElementById('add-uni-sel').value;
+  const prog     = document.getElementById('add-prog-cat').value;
+  const year     = document.getElementById('add-year').value;
+  const tuition  = document.getElementById('add-tuition').value;
+  const resultEl = document.getElementById('calc-result-text');
+  const milEl    = document.getElementById('calc-milestone-list');
+  const amtEl    = document.getElementById('add-comm-amt');
+
+  if (!uniId || !tuition || parseFloat(tuition) <= 0) {
+    resultEl.style.color = '#f59e0b';
+    resultEl.textContent = 'Please select a university and enter the tuition amount first.';
+    return;
+  }
+
+  resultEl.style.color = 'var(--muted)';
+  resultEl.textContent = 'Calculating…';
+
+  fetch(`/api/commission-calc?university_id=${uniId}&programme_category=${encodeURIComponent(prog)}&year_of_study=${year}&tuition_amount=${tuition}`)
+    .then(r => r.json())
+    .then(data => {
+      resultEl.style.color = '#15803d';
+      resultEl.textContent = data.breakdown;
+      amtEl.value = data.amount > 0 ? data.amount.toFixed(2) : '';
+
+      if (data.is_milestone && data.milestones.length) {
+        let html = '<div style="margin-top:8px;border-top:1px solid #bbf7d0;padding-top:8px;">';
+        html += '<div style="font-size:12px;font-weight:600;color:#15803d;margin-bottom:6px;">Payment milestones:</div>';
+        data.milestones.forEach(m => {
+          html += `<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;">
+            <span style="color:#374151;">${m.label}</span>
+            <strong style="color:#15803d;">${Number(m.amount).toLocaleString('en-GB', {minimumFractionDigits:2})}</strong>
+          </div>`;
+        });
+        html += '</div>';
+        milEl.innerHTML = html;
+      } else {
+        milEl.innerHTML = '';
+      }
+    })
+    .catch(() => {
+      resultEl.style.color = '#ef4444';
+      resultEl.textContent = 'Calculation failed. Please try again.';
+    });
+}
+</script>
 {% endblock %}

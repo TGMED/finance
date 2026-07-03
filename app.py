@@ -1,9 +1,9 @@
-import os, uuid, csv, io
+import os, uuid, csv, io, json
 from datetime import datetime
 from functools import wraps
 from sqlalchemy import text
 from flask import (Flask, render_template, request, redirect, url_for,
-                   session, flash, send_from_directory, Response)
+                   session, flash, send_from_directory, Response, jsonify)
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -73,6 +73,8 @@ class University(db.Model):
     duration             = db.Column(db.String(60))
     region               = db.Column(db.String(60))
     additional_comments  = db.Column(db.Text)
+    commission_type      = db.Column(db.String(30))
+    commission_rules     = db.Column(db.Text)       # JSON rule engine
 
     students  = db.relationship("Student",           backref="university", lazy=True, cascade="all, delete-orphan")
     documents = db.relationship("CommissionDocument", backref="university", lazy=True, cascade="all, delete-orphan")
@@ -109,8 +111,11 @@ class Student(db.Model):
     amount_collected= db.Column(db.Float, default=0.0)
     currency        = db.Column(db.String(10), default="USD")
     status          = db.Column(db.String(40), default="Prospect")
-    notes           = db.Column(db.Text)
-    created_at      = db.Column(db.DateTime, default=datetime.utcnow)
+    notes                      = db.Column(db.Text)
+    programme_category         = db.Column(db.String(60))
+    year_of_study              = db.Column(db.Integer, default=1)
+    commission_amount_override = db.Column(db.Float)
+    created_at                 = db.Column(db.DateTime, default=datetime.utcnow)
 
     @property
     def effective_rate(self):
@@ -120,6 +125,8 @@ class Student(db.Model):
 
     @property
     def commission_amount(self):
+        if self.commission_amount_override is not None:
+            return self.commission_amount_override
         return self.tuition_amount * self.effective_rate / 100
 
     @property
@@ -245,16 +252,20 @@ def fmtdate_filter(v):
 def ensure_columns():
     with db.engine.connect() as conn:
         dialect = db.engine.dialect.name
-        if dialect == "sqlite":
-            result = conn.execute(text("PRAGMA table_info(universities)"))
-            existing = {row[1] for row in result}
-        else:
-            result = conn.execute(text(
-                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
-                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'universities'"
-            ))
-            existing = {row[0] for row in result}
-        new_cols = {
+
+        def get_existing(table):
+            if dialect == "sqlite":
+                r = conn.execute(text(f"PRAGMA table_info({table})"))
+                return {row[1] for row in r}
+            else:
+                r = conn.execute(text(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t"
+                ), {"t": table})
+                return {row[0] for row in r}
+
+        existing_uni = get_existing("universities")
+        for col, dtype in {
             "commission_notes":    "TEXT",
             "incentives":          "TEXT",
             "contract_start":      "VARCHAR(40)",
@@ -264,14 +275,25 @@ def ensure_columns():
             "territory":           "TEXT",
             "expansion_requested": "BOOLEAN DEFAULT 0",
             "contract_status":     "VARCHAR(40) DEFAULT 'Active'",
-            "renewal_options":       "VARCHAR(200)",
-            "duration":              "VARCHAR(60)",
-            "region":                "VARCHAR(60)",
-            "additional_comments":   "TEXT",
-        }
-        for col, dtype in new_cols.items():
-            if col not in existing:
+            "renewal_options":     "VARCHAR(200)",
+            "duration":            "VARCHAR(60)",
+            "region":              "VARCHAR(60)",
+            "additional_comments": "TEXT",
+            "commission_type":     "VARCHAR(30)",
+            "commission_rules":    "TEXT",
+        }.items():
+            if col not in existing_uni:
                 conn.execute(text(f"ALTER TABLE universities ADD COLUMN {col} {dtype}"))
+
+        existing_stu = get_existing("students")
+        for col, dtype in {
+            "programme_category":         "VARCHAR(60)",
+            "year_of_study":              "INTEGER DEFAULT 1",
+            "commission_amount_override": "FLOAT",
+        }.items():
+            if col not in existing_stu:
+                conn.execute(text(f"ALTER TABLE students ADD COLUMN {col} {dtype}"))
+
         conn.commit()
 
 
@@ -291,6 +313,107 @@ def init_db():
 
 with app.app_context():
     init_db()
+
+
+# ── COMMISSION CALCULATOR ─────────────────────────────────────────────────────
+
+PROGRAMME_CATEGORIES = [
+    "Undergraduate", "Postgraduate / Masters", "PhD / Doctoral",
+    "Diploma", "Advanced Diploma", "EAP / ESL / English",
+    "Engineering", "Post-Graduate Certificate", "Certificate",
+    "Foundation", "MBA", "Other",
+]
+
+def _eval_rule(rules, programme, year, tuition, student_count):
+    t = rules.get("type", "")
+    prog_lower = (programme or "").lower()
+
+    if t == "flat_pct":
+        rate = rules.get("rate", 0)
+        return round(tuition * rate / 100, 2), f"{rate}% of tuition", False, []
+
+    if t == "tiered_by_year":
+        tiers = rules.get("tiers", [])
+        rate = rules.get("default_rate", 0)
+        for tier in tiers:
+            if tier.get("year") == year:
+                rate = tier.get("rate", rate)
+                break
+        return round(tuition * rate / 100, 2), f"{rate}% of tuition (Year {year})", False, []
+
+    if t == "tiered_by_volume":
+        tiers = sorted(rules.get("tiers", []), key=lambda x: x.get("min", 0), reverse=True)
+        rate, bonus = 0, 0
+        for tier in tiers:
+            min_s = tier.get("min", 0)
+            max_s = tier.get("max")
+            if student_count >= min_s and (max_s is None or student_count <= max_s):
+                rate = tier.get("rate", 0)
+                bonus = tier.get("bonus_per_student", 0)
+                break
+        amount = round(tuition * rate / 100 + bonus, 2)
+        desc = f"{rate}% of tuition"
+        if bonus:
+            desc += f" + {bonus:,.0f} bonus ({student_count} students at this uni)"
+        return amount, desc, False, []
+
+    if t == "by_programme":
+        prog_rules = rules.get("rules", [])
+        default_rate = rules.get("default_rate", 0)
+        rate, fixed = default_rate, None
+        for r in prog_rules:
+            if r.get("programme", "").lower() in prog_lower or prog_lower in r.get("programme", "").lower():
+                fixed = r.get("amount")
+                if fixed is None:
+                    rate = r.get("rate", default_rate)
+                break
+        if fixed is not None:
+            return float(fixed), f"Fixed fee for {programme or 'this programme'}", False, []
+        return round(tuition * rate / 100, 2), f"{rate}% for {programme or 'programme'}", False, []
+
+    if t == "fixed_by_programme":
+        prog_rules = rules.get("rules", [])
+        default_amount = rules.get("default_amount", 0)
+        amount = float(default_amount)
+        for r in prog_rules:
+            if r.get("programme", "").lower() in prog_lower or prog_lower in r.get("programme", "").lower():
+                amount = float(r.get("amount", default_amount))
+                break
+        return amount, f"Fixed fee for {programme or 'programme'}", False, []
+
+    if t == "fixed_amount":
+        return float(rules.get("amount", 0)), "Fixed fee per student", False, []
+
+    if t == "milestone":
+        by_prog = rules.get("by_programme", [])
+        if by_prog:
+            milestones = []
+            for bp in by_prog:
+                if bp.get("programme", "").lower() in prog_lower or prog_lower in bp.get("programme", "").lower():
+                    milestones = bp.get("milestones", [])
+                    break
+            if not milestones:
+                milestones = by_prog[0].get("milestones", [])
+        else:
+            milestones = rules.get("milestones", [])
+        total = sum(float(m.get("amount", 0)) for m in milestones)
+        return total, f"Milestone-based ({len(milestones)} payments)", True, milestones
+
+    return 0.0, "Unknown rule type", False, []
+
+
+def calculate_commission(uni, programme, year, tuition, student_count=1):
+    """Returns (amount, breakdown, is_milestone, milestones)."""
+    if not uni.commission_rules:
+        rate = uni.commission_rate or 0.0
+        if rate:
+            return round(tuition * rate / 100, 2), f"{rate}% of tuition (university default)", False, []
+        return 0.0, "No commission rules defined", False, []
+    try:
+        rules = json.loads(uni.commission_rules)
+    except (json.JSONDecodeError, TypeError):
+        return 0.0, "Invalid rules configuration", False, []
+    return _eval_rule(rules, programme or "", year or 1, tuition or 0.0, student_count)
 
 
 # ── AUTH ──────────────────────────────────────────────────────────────────────
@@ -372,6 +495,32 @@ def dashboard():
         recent=recent,
         currency_totals=currency_totals,
     )
+
+
+# ── COMMISSION CALC API ───────────────────────────────────────────────────────
+
+@app.route("/api/commission-calc")
+@login_required
+def api_commission_calc():
+    uni_id    = request.args.get("university_id", "")
+    programme = request.args.get("programme_category", "")
+    try:
+        year = int(request.args.get("year_of_study") or 1)
+    except ValueError:
+        year = 1
+    tuition = parse_float(request.args.get("tuition_amount", 0))
+
+    if not uni_id:
+        return jsonify({"amount": 0, "breakdown": "Select a university first", "is_milestone": False, "milestones": []})
+    uni = db.session.get(University, int(uni_id))
+    if not uni:
+        return jsonify({"amount": 0, "breakdown": "University not found", "is_milestone": False, "milestones": []})
+
+    student_count = len(uni.active_students) + 1
+    amount, breakdown, is_milestone, milestones = calculate_commission(
+        uni, programme, year, tuition, student_count
+    )
+    return jsonify({"amount": amount, "breakdown": breakdown, "is_milestone": is_milestone, "milestones": milestones})
 
 
 # ── UNIVERSITIES ──────────────────────────────────────────────────────────────
@@ -636,6 +785,7 @@ def students():
     return render_template("students.html",
         students=query.order_by(Student.created_at.desc()).all(),
         universities=University.query.order_by(University.name).all(),
+        programme_categories=PROGRAMME_CATEGORIES,
         q=q, status_filter=sf, uni_filter=uf,
     )
 
@@ -653,6 +803,7 @@ def student_add():
         flash("University not found.", "error")
         return redirect(url_for("students"))
     rate_str = request.form.get("commission_rate", "").strip()
+    override_str = request.form.get("commission_amount_override", "").strip()
     s = Student(
         name=name,
         email=request.form.get("email", "").strip(),
@@ -663,8 +814,11 @@ def student_add():
         intake=request.form.get("intake", "").strip(),
         tuition_amount=parse_float(request.form.get("tuition_amount")),
         commission_rate=parse_float(rate_str) if rate_str else None,
+        commission_amount_override=parse_float(override_str) if override_str else None,
         currency=request.form.get("currency", "USD"),
         status=request.form.get("status", "Prospect"),
+        programme_category=request.form.get("programme_category", "").strip() or None,
+        year_of_study=int(request.form.get("year_of_study") or 1),
         notes=request.form.get("notes", "").strip(),
     )
     db.session.add(s)
@@ -678,9 +832,18 @@ def student_add():
 @login_required
 def student_detail(sid):
     s = db.get_or_404(Student, sid)
+    student_count = len(s.university.active_students)
+    _, breakdown, is_milestone, milestones = calculate_commission(
+        s.university, s.programme_category, s.year_of_study or 1,
+        s.tuition_amount, student_count,
+    )
     return render_template("student_detail.html",
         student=s,
         universities=University.query.order_by(University.name).all(),
+        programme_categories=PROGRAMME_CATEGORIES,
+        comm_breakdown=breakdown,
+        comm_is_milestone=is_milestone,
+        comm_milestones=milestones,
     )
 
 
@@ -700,9 +863,13 @@ def student_edit(sid):
     s.tuition_amount  = parse_float(request.form.get("tuition_amount"), s.tuition_amount)
     rate_str = request.form.get("commission_rate", "").strip()
     s.commission_rate = parse_float(rate_str) if rate_str else None
-    s.currency        = request.form.get("currency", s.currency)
-    s.status          = request.form.get("status", s.status)
-    s.notes           = request.form.get("notes", "").strip()
+    override_str = request.form.get("commission_amount_override", "").strip()
+    s.commission_amount_override = parse_float(override_str) if override_str else None
+    s.currency             = request.form.get("currency", s.currency)
+    s.status               = request.form.get("status", s.status)
+    s.programme_category   = request.form.get("programme_category", "").strip() or None
+    s.year_of_study        = int(request.form.get("year_of_study") or 1)
+    s.notes                = request.form.get("notes", "").strip()
     log_activity("Updated", "Student", f"Edited: {s.name}")
     db.session.commit()
     flash("Student updated.", "success")
