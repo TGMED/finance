@@ -135,8 +135,19 @@
     </div>
     {% if university.commission_notes %}
     <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);">
-      <div style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:8px;">Full Commission Details</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div style="font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);">Full Commission Details</div>
+        <button type="button" onclick="parseCommissionRules()" class="btn teal" style="padding:4px 12px;font-size:12px;">
+          &#10024; Parse with AI
+        </button>
+      </div>
       <div style="font-size:13px;line-height:1.65;color:var(--text);">{{ university.commission_notes }}</div>
+    </div>
+    {% endif %}
+    {% if university.commission_rules %}
+    <div style="margin-top:10px;padding:10px 12px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;">
+      <div style="font-size:11px;font-weight:700;color:#15803d;letter-spacing:.5px;margin-bottom:4px;">AI RULES ACTIVE &#10003;</div>
+      <div style="font-size:12px;color:#374151;">Calculator uses structured rules — not a flat rate.</div>
     </div>
     {% endif %}
     {% if university.incentives %}
@@ -150,8 +161,9 @@
   <!-- Contact info -->
   <div class="info-card">
     <h3>Contact Information</h3>
+    <div style="font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--teal);text-transform:uppercase;margin-bottom:6px;">International Rep</div>
     <div class="info-row">
-      <span class="label">Contact Name</span>
+      <span class="label">Name</span>
       <span class="value">{{ university.contact_name or '—' }}</span>
     </div>
     <div class="info-row">
@@ -161,6 +173,19 @@
     <div class="info-row">
       <span class="label">Phone</span>
       <span class="value">{{ university.contact_phone or '—' }}</span>
+    </div>
+    <div style="font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);text-transform:uppercase;margin:12px 0 6px;border-top:1px solid var(--line);padding-top:12px;">Local Rep</div>
+    <div class="info-row">
+      <span class="label">Name</span>
+      <span class="value">{{ university.local_rep_name or '—' }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Email</span>
+      <span class="value">{{ university.local_rep_email or '—' }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Phone</span>
+      <span class="value">{{ university.local_rep_phone or '—' }}</span>
     </div>
     <div class="info-row">
       <span class="label">Website</span>
@@ -371,20 +396,36 @@
         <label>Incentives / Bonus</label>
         <textarea name="incentives" style="min-height:60px;">{{ university.incentives or '' }}</textarea>
       </div>
+      <div style="font-size:12px;font-weight:600;color:var(--teal);margin:8px 0 4px;">International Rep</div>
       <div class="form-row">
         <div class="form-group">
-          <label>Contact Name</label>
+          <label>Name</label>
           <input type="text" name="contact_name" value="{{ university.contact_name or '' }}">
         </div>
         <div class="form-group">
-          <label>Contact Email</label>
+          <label>Email</label>
           <input type="email" name="contact_email" value="{{ university.contact_email or '' }}">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Phone</label>
+        <input type="text" name="contact_phone" value="{{ university.contact_phone or '' }}">
+      </div>
+      <div style="font-size:12px;font-weight:600;color:var(--muted);margin:12px 0 4px;border-top:1px solid var(--line);padding-top:12px;">Local Rep</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" name="local_rep_name" value="{{ university.local_rep_name or '' }}">
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" name="local_rep_email" value="{{ university.local_rep_email or '' }}">
         </div>
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label>Contact Phone</label>
-          <input type="text" name="contact_phone" value="{{ university.contact_phone or '' }}">
+          <label>Phone</label>
+          <input type="text" name="local_rep_phone" value="{{ university.local_rep_phone or '' }}">
         </div>
         <div class="form-group">
           <label>Website</label>
@@ -416,4 +457,107 @@
     </div>
   </form>
 </dialog>
+
+<!-- AI Commission Rule Parser dialog -->
+<dialog id="dlg-ai-rules">
+  <div class="modal-head">
+    <h3>AI Commission Rules</h3>
+    <button type="button" class="modal-close" onclick="this.closest('dialog').close()">&#10005;</button>
+  </div>
+  <div class="modal-body">
+    <div id="ai-rules-status" style="font-size:13px;color:var(--muted);margin-bottom:12px;">
+      Analysing commission details…
+    </div>
+    <div id="ai-rules-preview" style="display:none;">
+      <div style="font-size:12px;font-weight:700;color:#15803d;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">Extracted Rules</div>
+      <div id="ai-rules-cards" style="margin-bottom:14px;"></div>
+      <details style="margin-bottom:12px;">
+        <summary style="font-size:12px;color:var(--muted);cursor:pointer;">View raw JSON</summary>
+        <pre id="ai-rules-json" style="font-size:11px;background:#f8fafc;border:1px solid var(--line);border-radius:6px;padding:10px;margin-top:8px;overflow-x:auto;white-space:pre-wrap;"></pre>
+      </details>
+      <form method="POST" action="{{ url_for('university_save_commission_rules', uid=university.id) }}">
+        <input type="hidden" name="commission_rules_json" id="ai-rules-hidden">
+        <div style="display:flex;gap:10px;">
+          <button type="button" class="btn ghost" onclick="document.getElementById('dlg-ai-rules').close()">Cancel</button>
+          <button type="submit" class="btn teal" style="flex:1;">Save Rules &amp; Activate Calculator</button>
+        </div>
+      </form>
+    </div>
+    <div id="ai-rules-error" style="display:none;color:#ef4444;font-size:13px;"></div>
+  </div>
+</dialog>
+
+<script>
+function parseCommissionRules() {
+  const dlg = document.getElementById('dlg-ai-rules');
+  document.getElementById('ai-rules-status').textContent = 'Analysing commission details…';
+  document.getElementById('ai-rules-status').style.display = '';
+  document.getElementById('ai-rules-preview').style.display = 'none';
+  document.getElementById('ai-rules-error').style.display = 'none';
+  dlg.showModal();
+
+  fetch('/api/parse-commission-rules', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({university_id: {{ university.id }}})
+  })
+  .then(r => r.json())
+  .then(data => {
+    document.getElementById('ai-rules-status').style.display = 'none';
+    if (data.error) {
+      const errEl = document.getElementById('ai-rules-error');
+      errEl.textContent = 'Error: ' + data.error;
+      errEl.style.display = '';
+      return;
+    }
+    const rules = data.rules;
+    document.getElementById('ai-rules-json').textContent = JSON.stringify(rules, null, 2);
+    document.getElementById('ai-rules-hidden').value = JSON.stringify(rules);
+    document.getElementById('ai-rules-cards').innerHTML = renderRules(rules);
+    document.getElementById('ai-rules-preview').style.display = '';
+  })
+  .catch(e => {
+    document.getElementById('ai-rules-status').style.display = 'none';
+    const errEl = document.getElementById('ai-rules-error');
+    errEl.textContent = 'Request failed. Check your API key is set.';
+    errEl.style.display = '';
+  });
+}
+
+function renderRules(rules) {
+  const type = rules.type || '';
+  const card = (label, value) =>
+    `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e2e8f0;font-size:13px;">
+       <span style="color:#64748b;">${label}</span>
+       <strong style="color:#0f172a;">${value}</strong>
+     </div>`;
+
+  let html = `<div style="background:#f8fafc;border-radius:8px;padding:10px 14px;">`;
+  html += card('Rule Type', type.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()));
+
+  if (type === 'flat_pct') {
+    html += card('Rate', rules.rate + '%');
+  } else if (type === 'by_programme' && rules.rules) {
+    rules.rules.forEach(r => {
+      html += card(r.programme.charAt(0).toUpperCase() + r.programme.slice(1), r.rate + '%');
+    });
+    if (rules.default_rate) html += card('Default Rate', rules.default_rate + '%');
+  } else if (type === 'tiered_by_year' && rules.tiers) {
+    rules.tiers.forEach(t => html += card('Year ' + t.year, t.rate + '%'));
+    if (rules.default_rate) html += card('Default', rules.default_rate + '%');
+  } else if (type === 'tiered_by_volume' && rules.tiers) {
+    rules.tiers.forEach(t => {
+      const range = t.max ? `${t.min}–${t.max} students` : `${t.min}+ students`;
+      html += card(range, t.rate + '%' + (t.bonus_per_student ? ` + ${t.bonus_per_student} bonus` : ''));
+    });
+  } else if ((type === 'fixed_amount' || type === 'fixed_by_programme') && rules.amount) {
+    html += card('Amount', (rules.currency || 'GBP') + ' ' + rules.amount);
+  } else if (type === 'fixed_by_programme' && rules.rules) {
+    rules.rules.forEach(r => html += card(r.programme, (rules.currency || 'GBP') + ' ' + r.amount));
+    if (rules.default_amount) html += card('Default', (rules.currency || 'GBP') + ' ' + rules.default_amount);
+  }
+  html += '</div>';
+  return html;
+}
+</script>
 {% endblock %}

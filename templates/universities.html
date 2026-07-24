@@ -25,7 +25,7 @@
   </div>
   <select name="region" class="filter-sel" style="background:#fff;">
     <option value="">All Regions</option>
-    {% for r in ['UK','Canada','North America','Global'] %}
+    {% for r in ['UK','Europe','Canada','North America','Global'] %}
       <option value="{{ r }}" {% if region_filter == r %}selected{% endif %}>{{ r }}</option>
     {% endfor %}
   </select>
@@ -141,7 +141,7 @@
     <div class="modal-body">
       <div style="background:var(--teal-dim);border-radius:10px;padding:14px 16px;margin-bottom:16px;font-size:13px;line-height:1.65;">
         <strong>Required columns:</strong><br>
-        <code>name</code> (required) &bull; <code>country</code> &bull; <code>city</code> &bull; <code>region</code> (UK / Canada / North America / Global) &bull;
+        <code>name</code> (required) &bull; <code>country</code> &bull; <code>city</code> &bull; <code>region</code> (UK / Europe / Canada / North America / Global) &bull;
         <code>commission_rate</code> (number, e.g. 15) &bull; <code>commission_notes</code> &bull; <code>incentives</code> &bull;
         <code>contract_start</code> &bull; <code>contract_end</code> &bull; <code>review_date</code> &bull;
         <code>target_students</code> &bull; <code>territory</code> &bull;
@@ -153,6 +153,34 @@
           <a href="{{ url_for('universities_import_template') }}" style="color:var(--teal);font-weight:600;">
             &#8681; Download template CSV with example row
           </a>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Default Country</label>
+          <select name="default_country">
+            <option value="United Kingdom">United Kingdom</option>
+            <option value="Canada">Canada</option>
+            <option value="United States">United States</option>
+            <option value="Australia">Australia</option>
+            <option value="Ireland">Ireland</option>
+            <option value="New Zealand">New Zealand</option>
+            <option value="Malaysia">Malaysia</option>
+            <option value="Other">Other</option>
+          </select>
+          <div class="muted" style="font-size:12px;margin-top:4px;">Used when the file has no country column.</div>
+        </div>
+        <div class="form-group">
+          <label>Default Region</label>
+          <select name="default_region">
+            <option value="UK">UK</option>
+            <option value="Europe">Europe</option>
+            <option value="Canada">Canada</option>
+            <option value="North America">North America</option>
+            <option value="Australia">Australia</option>
+            <option value="Asia Pacific">Asia Pacific</option>
+            <option value="Global">Global</option>
+          </select>
         </div>
       </div>
       <div class="form-group">
@@ -196,6 +224,7 @@
           <select name="region">
             <option value="">— Select —</option>
             <option value="UK">UK</option>
+            <option value="Europe">Europe</option>
             <option value="Canada">Canada</option>
             <option value="North America">North America</option>
             <option value="Global">Global</option>

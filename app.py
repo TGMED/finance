@@ -1,4 +1,8 @@
 import os, uuid, csv, io, json
+try:
+    import anthropic as _anthropic_sdk
+except ImportError:
+    _anthropic_sdk = None
 from datetime import datetime, timedelta
 from functools import wraps
 from sqlalchemy import text
@@ -80,6 +84,9 @@ class University(db.Model):
     additional_comments  = db.Column(db.Text)
     commission_type      = db.Column(db.String(30))
     commission_rules     = db.Column(db.Text)       # JSON rule engine
+    local_rep_name       = db.Column(db.String(120))
+    local_rep_email      = db.Column(db.String(120))
+    local_rep_phone      = db.Column(db.String(60))
 
     students  = db.relationship("Student",           backref="university", lazy=True, cascade="all, delete-orphan")
     documents = db.relationship("CommissionDocument", backref="university", lazy=True, cascade="all, delete-orphan")
@@ -286,6 +293,9 @@ def ensure_columns():
             "additional_comments": "TEXT",
             "commission_type":     "VARCHAR(30)",
             "commission_rules":    "TEXT",
+            "local_rep_name":      "VARCHAR(120)",
+            "local_rep_email":     "VARCHAR(120)",
+            "local_rep_phone":     "VARCHAR(60)",
         }.items():
             if col not in existing_uni:
                 conn.execute(text(f"ALTER TABLE universities ADD COLUMN {col} {dtype}"))
@@ -551,6 +561,100 @@ def api_commission_calc():
     return jsonify({"amount": amount, "breakdown": breakdown, "is_milestone": is_milestone, "milestones": milestones})
 
 
+# ── AI COMMISSION RULE PARSER ─────────────────────────────────────────────────
+
+_PARSE_SYSTEM = """You are a commission rule extractor for a university recruitment CRM.
+Given commission details text from a university partnership agreement, output ONLY valid JSON — no explanation, no markdown fences.
+
+Use exactly one of these structures:
+
+flat_pct — one rate for everyone:
+{"type":"flat_pct","rate":15}
+
+by_programme — different rates per programme type:
+{"type":"by_programme","rules":[{"programme":"undergraduate","rate":15},{"programme":"postgraduate","rate":15}],"default_rate":15}
+Programme values (lowercase): undergraduate, postgraduate, phd, diploma, foundation, mba, esl, online, engineering, certificate, other
+
+tiered_by_year — rate drops/changes by year of study:
+{"type":"tiered_by_year","tiers":[{"year":1,"rate":15},{"year":2,"rate":10}],"default_rate":10}
+
+tiered_by_volume — rate changes based on total students sent:
+{"type":"tiered_by_volume","tiers":[{"min":1,"max":5,"rate":10},{"min":6,"rate":15}]}
+
+fixed_by_programme — fixed cash amount per student by programme:
+{"type":"fixed_by_programme","currency":"GBP","rules":[{"programme":"undergraduate","amount":1000}],"default_amount":500}
+
+fixed_amount — single fixed cash amount per student:
+{"type":"fixed_amount","currency":"GBP","amount":500}
+
+Rules:
+- If multiple programmes have different rates, use by_programme.
+- If a single rate applies to everything, use flat_pct.
+- Currency defaults to GBP unless stated otherwise.
+- Output ONLY the JSON object, nothing else."""
+
+@app.route("/api/parse-commission-rules", methods=["POST"])
+@login_required
+def api_parse_commission_rules():
+    if not _anthropic_sdk:
+        return jsonify({"error": "anthropic package not installed"}), 500
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        return jsonify({"error": "ANTHROPIC_API_KEY not configured"}), 500
+
+    data = request.get_json(silent=True) or {}
+    text_input = (data.get("text") or "").strip()
+    uni_id = data.get("university_id")
+
+    if not text_input and uni_id:
+        uni = db.session.get(University, int(uni_id))
+        if uni:
+            text_input = (uni.commission_notes or "").strip()
+
+    if not text_input:
+        return jsonify({"error": "No commission details text provided"}), 400
+
+    try:
+        client = _anthropic_sdk.Anthropic(api_key=api_key)
+        msg = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=512,
+            system=_PARSE_SYSTEM,
+            messages=[{"role": "user", "content": f"Extract commission rules from:\n\n{text_input}"}],
+        )
+        raw = msg.content[0].text.strip()
+        # Strip markdown code fences if present
+        clean = raw
+        if clean.startswith("```"):
+            clean = clean.split("\n", 1)[-1]
+            clean = clean.rsplit("```", 1)[0].strip()
+        rules = json.loads(clean)
+        return jsonify({"rules": rules, "raw": clean})
+    except json.JSONDecodeError:
+        return jsonify({"error": "AI returned invalid JSON", "raw": raw}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/universities/<int:uid>/save-commission-rules", methods=["POST"])
+@login_required
+def university_save_commission_rules(uid):
+    uni = db.get_or_404(University, uid)
+    rules_json = request.form.get("commission_rules_json", "").strip()
+    if not rules_json:
+        flash("No rules provided.", "error")
+        return redirect(url_for("university_detail", uid=uid))
+    try:
+        json.loads(rules_json)  # validate
+    except json.JSONDecodeError:
+        flash("Invalid rules JSON.", "error")
+        return redirect(url_for("university_detail", uid=uid))
+    uni.commission_rules = rules_json
+    db.session.commit()
+    flash("Commission rules saved — calculator will now use these rules.", "success")
+    return redirect(url_for("university_detail", uid=uid))
+
+
 # ── UNIVERSITIES ──────────────────────────────────────────────────────────────
 
 @app.route("/universities")
@@ -644,6 +748,9 @@ def university_edit(uid):
     u.contact_name       = request.form.get("contact_name", "").strip()
     u.contact_email      = request.form.get("contact_email", "").strip()
     u.contact_phone      = request.form.get("contact_phone", "").strip()
+    u.local_rep_name     = request.form.get("local_rep_name", "").strip()
+    u.local_rep_email    = request.form.get("local_rep_email", "").strip()
+    u.local_rep_phone    = request.form.get("local_rep_phone", "").strip()
     u.website            = request.form.get("website", "").strip()
     u.agreement_signed   = bool(request.form.get("agreement_signed"))
     u.notes              = request.form.get("notes", "").strip()
@@ -745,48 +852,117 @@ def universities_import():
     if not f or not f.filename.endswith(".csv"):
         flash("Please upload a valid CSV file.", "error")
         return redirect(url_for("universities"))
-    stream = io.StringIO(f.stream.read().decode("utf-8-sig"))
-    reader = csv.DictReader(stream)
+
+    raw = f.stream.read().decode("utf-8-sig")
+    all_rows = list(csv.reader(io.StringIO(raw)))
+    if not all_rows:
+        flash("Empty file.", "error")
+        return redirect(url_for("universities"))
+
+    headers = [h.strip() for h in all_rows[0]]
+    is_external = "Name of Institution" in headers
+
+    def _bool(v): return str(v or "").strip() in ("1", "true", "True", "yes", "Yes")
+    def _float(v):
+        try: return float(v)
+        except: return 0.0
+    def _clean(v):
+        v = (v or "").strip()
+        return v if v and v.upper() not in ("NA", "N/A", "-", "NONE", "NOT SPECIFIED") else ""
+
     added = skipped = 0
-    for row in reader:
-        name = (row.get("name") or "").strip()
-        if not name:
-            skipped += 1
-            continue
-        exists = University.query.filter_by(name=name).first()
-        if exists:
-            skipped += 1
-            continue
-        def _bool(v): return str(v).strip() in ("1", "true", "True", "yes", "Yes")
-        def _float(v):
-            try: return float(v)
-            except: return 0.0
-        u = University(
-            name=name,
-            country=(row.get("country") or "").strip() or None,
-            city=(row.get("city") or "").strip() or None,
-            region=(row.get("region") or "").strip() or None,
-            commission_rate=_float(row.get("commission_rate", 0)),
-            commission_notes=(row.get("commission_notes") or "").strip() or None,
-            incentives=(row.get("incentives") or "").strip() or None,
-            contract_start=(row.get("contract_start") or "").strip() or None,
-            contract_end=(row.get("contract_end") or "").strip() or None,
-            review_date=(row.get("review_date") or "").strip() or None,
-            target_students=(row.get("target_students") or "").strip() or None,
-            territory=(row.get("territory") or "").strip() or None,
-            expansion_requested=_bool(row.get("expansion_requested")),
-            contract_status=(row.get("contract_status") or "Active").strip(),
-            renewal_options=(row.get("renewal_options") or "").strip() or None,
-            duration=(row.get("duration") or "").strip() or None,
-            contact_name=(row.get("contact_name") or "").strip() or None,
-            contact_email=(row.get("contact_email") or "").strip() or None,
-            contact_phone=(row.get("contact_phone") or "").strip() or None,
-            website=(row.get("website") or "").strip() or None,
-            agreement_signed=_bool(row.get("agreement_signed")),
-            notes=(row.get("notes") or "").strip() or None,
-        )
-        db.session.add(u)
-        added += 1
+    default_country = request.form.get("default_country", "United Kingdom").strip() or "United Kingdom"
+    default_region  = request.form.get("default_region",  "UK").strip() or "UK"
+
+    if is_external:
+        # Index-based reading to handle duplicate Email/Phone Number columns
+        # Headers: Name of Institution(0), Duration(1), Start Date(2), End Date(3),
+        #          status(4), Renewal options(5), Commission(6), Territory(7),
+        #          Comments(8), Int Rep(9), Int Email(10), Int Phone(11),
+        #          Local Rep(12), Local Email(13), Local Phone(14)
+        for raw_row in all_rows[1:]:
+            def c(i): return _clean(raw_row[i] if i < len(raw_row) else "")
+            name = c(0)
+            if not name:
+                skipped += 1
+                continue
+            if University.query.filter_by(name=name).first():
+                skipped += 1
+                continue
+            raw_status = c(4)
+            if raw_status.lower() in ("under review", "") or raw_status not in ("Active", "Expired", "Terminated"):
+                raw_status = "Active"
+            u = University(
+                name=name,
+                country=default_country, region=default_region,
+                duration=c(1) or None,
+                contract_start=c(2) or None,
+                contract_end=c(3) or None,
+                contract_status=raw_status,
+                renewal_options=c(5) or None,
+                commission_notes=c(6) or None,
+                territory=c(7) or None,
+                notes=c(8) or None,
+                contact_name=c(9) or None,
+                contact_email=c(10) or None,
+                contact_phone=c(11) or None,
+                local_rep_name=c(12) or None,
+                local_rep_email=c(13) or None,
+                local_rep_phone=c(14) or None,
+                agreement_signed=(raw_status == "Active"),
+                commission_rate=0.0,
+            )
+            db.session.add(u)
+            added += 1
+    else:
+        # Standard template format — use column name mapping
+        col = {h: i for i, h in enumerate(headers)}
+        def _get_col(row_data, *keys):
+            for k in keys:
+                if k in col:
+                    return _clean(row_data[col[k]] if col[k] < len(row_data) else "")
+            return ""
+        for raw_row in all_rows[1:]:
+            name = _get_col(raw_row, "name")
+            if not name:
+                skipped += 1
+                continue
+            if University.query.filter_by(name=name).first():
+                skipped += 1
+                continue
+            raw_status = _get_col(raw_row, "contract_status") or "Active"
+            if raw_status not in ("Active", "Expired", "Terminated"):
+                raw_status = "Active"
+            u = University(
+                name=name,
+                country=_get_col(raw_row, "country") or None,
+                city=_get_col(raw_row, "city") or None,
+                region=_get_col(raw_row, "region") or None,
+                commission_rate=_float(_get_col(raw_row, "commission_rate")),
+                commission_notes=_get_col(raw_row, "commission_notes") or None,
+                incentives=_get_col(raw_row, "incentives") or None,
+                contract_start=_get_col(raw_row, "contract_start") or None,
+                contract_end=_get_col(raw_row, "contract_end") or None,
+                review_date=_get_col(raw_row, "review_date") or None,
+                target_students=_get_col(raw_row, "target_students") or None,
+                territory=_get_col(raw_row, "territory") or None,
+                expansion_requested=_bool(_get_col(raw_row, "expansion_requested")),
+                contract_status=raw_status,
+                renewal_options=_get_col(raw_row, "renewal_options") or None,
+                duration=_get_col(raw_row, "duration") or None,
+                contact_name=_get_col(raw_row, "contact_name") or None,
+                contact_email=_get_col(raw_row, "contact_email") or None,
+                contact_phone=_get_col(raw_row, "contact_phone") or None,
+                local_rep_name=_get_col(raw_row, "local_rep_name") or None,
+                local_rep_email=_get_col(raw_row, "local_rep_email") or None,
+                local_rep_phone=_get_col(raw_row, "local_rep_phone") or None,
+                website=_get_col(raw_row, "website") or None,
+                agreement_signed=_bool(_get_col(raw_row, "agreement_signed")),
+                notes=_get_col(raw_row, "notes") or None,
+            )
+            db.session.add(u)
+            added += 1
+
     db.session.commit()
     log_activity("Imported", "Universities", f"Imported {added} universities via CSV")
     flash(f"Import complete: {added} added, {skipped} skipped (duplicate or blank name).", "success")
