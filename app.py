@@ -870,52 +870,70 @@ def universities_import():
         v = (v or "").strip()
         return v if v and v.upper() not in ("NA", "N/A", "-", "NONE", "NOT SPECIFIED") else ""
 
-    added = skipped = 0
-    default_country = request.form.get("default_country", "United Kingdom").strip() or "United Kingdom"
-    default_region  = request.form.get("default_region",  "UK").strip() or "UK"
+    added = skipped = updated = 0
+    default_country  = request.form.get("default_country", "United Kingdom").strip() or "United Kingdom"
+    default_region   = request.form.get("default_region",  "UK").strip() or "UK"
+    update_existing  = request.form.get("update_existing") == "1"
 
     if is_external:
-        # Index-based reading to handle duplicate Email/Phone Number columns
-        # Headers: Name of Institution(0), Duration(1), Start Date(2), End Date(3),
-        #          status(4), Renewal options(5), Commission(6), Territory(7),
-        #          Comments(8), Int Rep(9), Int Email(10), Int Phone(11),
-        #          Local Rep(12), Local Email(13), Local Phone(14)
         for raw_row in all_rows[1:]:
             def c(i): return _clean(raw_row[i] if i < len(raw_row) else "")
             name = c(0)
             if not name:
                 skipped += 1
                 continue
-            if University.query.filter_by(name=name).first():
-                skipped += 1
-                continue
             raw_status = c(4)
             if raw_status.lower() in ("under review", "") or raw_status not in ("Active", "Expired", "Terminated"):
                 raw_status = "Active"
-            u = University(
-                name=name,
-                country=default_country, region=default_region,
-                duration=c(1) or None,
-                contract_start=c(2) or None,
-                contract_end=c(3) or None,
-                contract_status=raw_status,
-                renewal_options=c(5) or None,
-                commission_notes=c(6) or None,
-                territory=c(7) or None,
-                notes=c(8) or None,
-                contact_name=c(9) or None,
-                contact_email=c(10) or None,
-                contact_phone=c(11) or None,
-                local_rep_name=c(12) or None,
-                local_rep_email=c(13) or None,
-                local_rep_phone=c(14) or None,
-                agreement_signed=(raw_status == "Active"),
-                commission_rate=0.0,
-            )
-            db.session.add(u)
-            added += 1
+
+            existing = University.query.filter_by(name=name).first()
+            if existing:
+                if not update_existing:
+                    skipped += 1
+                    continue
+                # Update existing record
+                existing.country         = default_country
+                existing.region          = default_region
+                existing.duration        = c(1) or existing.duration
+                existing.contract_start  = c(2) or existing.contract_start
+                existing.contract_end    = c(3) or existing.contract_end
+                existing.contract_status = raw_status
+                existing.renewal_options = c(5) or existing.renewal_options
+                existing.commission_notes= c(6) or existing.commission_notes
+                existing.territory       = c(7) or existing.territory
+                existing.notes           = c(8) or existing.notes
+                existing.contact_name    = c(9) or existing.contact_name
+                existing.contact_email   = c(10) or existing.contact_email
+                existing.contact_phone   = c(11) or existing.contact_phone
+                existing.local_rep_name  = c(12) or existing.local_rep_name
+                existing.local_rep_email = c(13) or existing.local_rep_email
+                existing.local_rep_phone = c(14) or existing.local_rep_phone
+                existing.agreement_signed= (raw_status == "Active")
+                updated += 1
+            else:
+                u = University(
+                    name=name,
+                    country=default_country, region=default_region,
+                    duration=c(1) or None,
+                    contract_start=c(2) or None,
+                    contract_end=c(3) or None,
+                    contract_status=raw_status,
+                    renewal_options=c(5) or None,
+                    commission_notes=c(6) or None,
+                    territory=c(7) or None,
+                    notes=c(8) or None,
+                    contact_name=c(9) or None,
+                    contact_email=c(10) or None,
+                    contact_phone=c(11) or None,
+                    local_rep_name=c(12) or None,
+                    local_rep_email=c(13) or None,
+                    local_rep_phone=c(14) or None,
+                    agreement_signed=(raw_status == "Active"),
+                    commission_rate=0.0,
+                )
+                db.session.add(u)
+                added += 1
     else:
-        # Standard template format — use column name mapping
         col = {h: i for i, h in enumerate(headers)}
         def _get_col(row_data, *keys):
             for k in keys:
@@ -927,45 +945,78 @@ def universities_import():
             if not name:
                 skipped += 1
                 continue
-            if University.query.filter_by(name=name).first():
-                skipped += 1
-                continue
             raw_status = _get_col(raw_row, "contract_status") or "Active"
             if raw_status not in ("Active", "Expired", "Terminated"):
                 raw_status = "Active"
-            u = University(
-                name=name,
-                country=_get_col(raw_row, "country") or None,
-                city=_get_col(raw_row, "city") or None,
-                region=_get_col(raw_row, "region") or None,
-                commission_rate=_float(_get_col(raw_row, "commission_rate")),
-                commission_notes=_get_col(raw_row, "commission_notes") or None,
-                incentives=_get_col(raw_row, "incentives") or None,
-                contract_start=_get_col(raw_row, "contract_start") or None,
-                contract_end=_get_col(raw_row, "contract_end") or None,
-                review_date=_get_col(raw_row, "review_date") or None,
-                target_students=_get_col(raw_row, "target_students") or None,
-                territory=_get_col(raw_row, "territory") or None,
-                expansion_requested=_bool(_get_col(raw_row, "expansion_requested")),
-                contract_status=raw_status,
-                renewal_options=_get_col(raw_row, "renewal_options") or None,
-                duration=_get_col(raw_row, "duration") or None,
-                contact_name=_get_col(raw_row, "contact_name") or None,
-                contact_email=_get_col(raw_row, "contact_email") or None,
-                contact_phone=_get_col(raw_row, "contact_phone") or None,
-                local_rep_name=_get_col(raw_row, "local_rep_name") or None,
-                local_rep_email=_get_col(raw_row, "local_rep_email") or None,
-                local_rep_phone=_get_col(raw_row, "local_rep_phone") or None,
-                website=_get_col(raw_row, "website") or None,
-                agreement_signed=_bool(_get_col(raw_row, "agreement_signed")),
-                notes=_get_col(raw_row, "notes") or None,
-            )
-            db.session.add(u)
-            added += 1
+
+            existing = University.query.filter_by(name=name).first()
+            if existing:
+                if not update_existing:
+                    skipped += 1
+                    continue
+                existing.country             = _get_col(raw_row, "country") or existing.country
+                existing.city                = _get_col(raw_row, "city") or existing.city
+                existing.region              = _get_col(raw_row, "region") or existing.region
+                existing.commission_rate     = _float(_get_col(raw_row, "commission_rate")) or existing.commission_rate
+                existing.commission_notes    = _get_col(raw_row, "commission_notes") or existing.commission_notes
+                existing.incentives          = _get_col(raw_row, "incentives") or existing.incentives
+                existing.contract_start      = _get_col(raw_row, "contract_start") or existing.contract_start
+                existing.contract_end        = _get_col(raw_row, "contract_end") or existing.contract_end
+                existing.review_date         = _get_col(raw_row, "review_date") or existing.review_date
+                existing.target_students     = _get_col(raw_row, "target_students") or existing.target_students
+                existing.territory           = _get_col(raw_row, "territory") or existing.territory
+                existing.expansion_requested = _bool(_get_col(raw_row, "expansion_requested"))
+                existing.contract_status     = raw_status
+                existing.renewal_options     = _get_col(raw_row, "renewal_options") or existing.renewal_options
+                existing.duration            = _get_col(raw_row, "duration") or existing.duration
+                existing.contact_name        = _get_col(raw_row, "contact_name") or existing.contact_name
+                existing.contact_email       = _get_col(raw_row, "contact_email") or existing.contact_email
+                existing.contact_phone       = _get_col(raw_row, "contact_phone") or existing.contact_phone
+                existing.local_rep_name      = _get_col(raw_row, "local_rep_name") or existing.local_rep_name
+                existing.local_rep_email     = _get_col(raw_row, "local_rep_email") or existing.local_rep_email
+                existing.local_rep_phone     = _get_col(raw_row, "local_rep_phone") or existing.local_rep_phone
+                existing.website             = _get_col(raw_row, "website") or existing.website
+                existing.agreement_signed    = _bool(_get_col(raw_row, "agreement_signed"))
+                existing.notes               = _get_col(raw_row, "notes") or existing.notes
+                updated += 1
+            else:
+                u = University(
+                    name=name,
+                    country=_get_col(raw_row, "country") or None,
+                    city=_get_col(raw_row, "city") or None,
+                    region=_get_col(raw_row, "region") or None,
+                    commission_rate=_float(_get_col(raw_row, "commission_rate")),
+                    commission_notes=_get_col(raw_row, "commission_notes") or None,
+                    incentives=_get_col(raw_row, "incentives") or None,
+                    contract_start=_get_col(raw_row, "contract_start") or None,
+                    contract_end=_get_col(raw_row, "contract_end") or None,
+                    review_date=_get_col(raw_row, "review_date") or None,
+                    target_students=_get_col(raw_row, "target_students") or None,
+                    territory=_get_col(raw_row, "territory") or None,
+                    expansion_requested=_bool(_get_col(raw_row, "expansion_requested")),
+                    contract_status=raw_status,
+                    renewal_options=_get_col(raw_row, "renewal_options") or None,
+                    duration=_get_col(raw_row, "duration") or None,
+                    contact_name=_get_col(raw_row, "contact_name") or None,
+                    contact_email=_get_col(raw_row, "contact_email") or None,
+                    contact_phone=_get_col(raw_row, "contact_phone") or None,
+                    local_rep_name=_get_col(raw_row, "local_rep_name") or None,
+                    local_rep_email=_get_col(raw_row, "local_rep_email") or None,
+                    local_rep_phone=_get_col(raw_row, "local_rep_phone") or None,
+                    website=_get_col(raw_row, "website") or None,
+                    agreement_signed=_bool(_get_col(raw_row, "agreement_signed")),
+                    notes=_get_col(raw_row, "notes") or None,
+                )
+                db.session.add(u)
+                added += 1
 
     db.session.commit()
-    log_activity("Imported", "Universities", f"Imported {added} universities via CSV")
-    flash(f"Import complete: {added} added, {skipped} skipped (duplicate or blank name).", "success")
+    log_activity("Imported", "Universities", f"Imported {added} added, {updated} updated via CSV")
+    parts = []
+    if added:   parts.append(f"{added} added")
+    if updated: parts.append(f"{updated} updated")
+    if skipped: parts.append(f"{skipped} skipped")
+    flash(f"Import complete: {', '.join(parts)}.", "success")
     return redirect(url_for("universities"))
 
 

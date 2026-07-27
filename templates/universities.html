@@ -186,7 +186,11 @@
       <div class="form-group">
         <label>CSV File *</label>
         <input type="file" name="csv_file" accept=".csv" required>
-        <div class="muted" style="font-size:12px;margin-top:5px;">Duplicates (same name) are skipped automatically.</div>
+        <div class="muted" style="font-size:12px;margin-top:5px;">Duplicates (same name) are skipped unless you tick the option below.</div>
+      </div>
+      <div class="check-row" style="margin-top:4px;">
+        <input type="checkbox" name="update_existing" id="chk-update-existing" value="1">
+        <label for="chk-update-existing" style="margin:0;">Update existing universities with new information from file</label>
       </div>
     </div>
     <div class="modal-foot">
