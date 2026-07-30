@@ -241,7 +241,7 @@ def admin_required(f):
 # ── TEMPLATE FILTERS ──────────────────────────────────────────────────────────
 
 @app.template_filter("money")
-def money_filter(v, currency="USD"):
+def money_filter(v, currency="GBP"):
     if v is None:
         return "—"
     symbols = {"USD": "$", "GBP": "£", "EUR": "€", "NGN": "₦", "CAD": "CA$", "AUD": "A$"}
