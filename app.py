@@ -296,6 +296,8 @@ def ensure_columns():
             "local_rep_name":      "VARCHAR(120)",
             "local_rep_email":     "VARCHAR(120)",
             "local_rep_phone":     "VARCHAR(60)",
+            "agent_code":          "VARCHAR(100)",
+            "supplier_id":         "VARCHAR(100)",
         }.items():
             if col not in existing_uni:
                 conn.execute(text(f"ALTER TABLE universities ADD COLUMN {col} {dtype}"))
@@ -751,6 +753,8 @@ def university_edit(uid):
     u.local_rep_name     = request.form.get("local_rep_name", "").strip()
     u.local_rep_email    = request.form.get("local_rep_email", "").strip()
     u.local_rep_phone    = request.form.get("local_rep_phone", "").strip()
+    u.agent_code         = request.form.get("agent_code", "").strip()
+    u.supplier_id        = request.form.get("supplier_id", "").strip()
     u.website            = request.form.get("website", "").strip()
     u.agreement_signed   = bool(request.form.get("agreement_signed"))
     u.notes              = request.form.get("notes", "").strip()

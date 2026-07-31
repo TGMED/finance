@@ -107,6 +107,14 @@
       </span>
     </div>
     <div class="info-row">
+      <span class="label">Agent Code</span>
+      <span class="value">{{ university.agent_code or '—' }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Supplier ID</span>
+      <span class="value">{{ university.supplier_id or '—' }}</span>
+    </div>
+    <div class="info-row">
       <span class="label">Added</span>
       <span class="value muted">{{ university.created_at.strftime('%d %b %Y') }}</span>
     </div>
@@ -430,6 +438,16 @@
         <div class="form-group">
           <label>Website</label>
           <input type="url" name="website" value="{{ university.website or '' }}">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Agent Code</label>
+            <input type="text" name="agent_code" value="{{ university.agent_code or '' }}" placeholder="e.g. TGM001">
+          </div>
+          <div class="form-group">
+            <label>Supplier ID</label>
+            <input type="text" name="supplier_id" value="{{ university.supplier_id or '' }}" placeholder="e.g. SUP-12345">
+          </div>
         </div>
       </div>
       <div class="form-group">
