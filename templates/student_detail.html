@@ -2,6 +2,7 @@
 {% block title %}{{ student.name }} — TGM Finance{% endblock %}
 {% block page_title %}{{ student.name }}{% endblock %}
 {% block page_sub %}Student commission profile{% endblock %}
+{% block back_button %}<a href="{{ url_for('students') }}" class="back-btn">&#8592; Students</a>{% endblock %}
 
 {% block content %}
 <div class="page-header">

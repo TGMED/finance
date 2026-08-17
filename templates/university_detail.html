@@ -2,6 +2,7 @@
 {% block title %}{{ university.name }} — TGM Finance{% endblock %}
 {% block page_title %}{{ university.name }}{% endblock %}
 {% block page_sub %}University profile &amp; commission summary{% endblock %}
+{% block back_button %}<a href="{{ url_for('universities') }}" class="back-btn">&#8592; Universities</a>{% endblock %}
 
 {% block content %}
 <div class="page-header">
@@ -174,34 +175,57 @@
 
   <!-- Contact info -->
   <div class="info-card">
-    <h3>Contact Information</h3>
-    <div style="font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--teal);text-transform:uppercase;margin-bottom:6px;">International Rep</div>
-    <div class="info-row">
-      <span class="label">Name</span>
-      <span class="value">{{ university.contact_name or '—' }}</span>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <h3 style="margin:0;">Contacts</h3>
+      <button class="btn teal sm" onclick="document.getElementById('dlg-add-rep').showModal()">+ Add Contact</button>
     </div>
-    <div class="info-row">
-      <span class="label">Email</span>
-      <span class="value">{{ university.contact_email or '—' }}</span>
-    </div>
-    <div class="info-row">
-      <span class="label">Phone</span>
-      <span class="value">{{ university.contact_phone or '—' }}</span>
-    </div>
-    <div style="font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);text-transform:uppercase;margin:12px 0 6px;border-top:1px solid var(--line);padding-top:12px;">Local Rep</div>
-    <div class="info-row">
-      <span class="label">Name</span>
-      <span class="value">{{ university.local_rep_name or '—' }}</span>
-    </div>
-    <div class="info-row">
-      <span class="label">Email</span>
-      <span class="value">{{ university.local_rep_email or '—' }}</span>
-    </div>
-    <div class="info-row">
-      <span class="label">Phone</span>
-      <span class="value">{{ university.local_rep_phone or '—' }}</span>
-    </div>
-    <div class="info-row">
+
+    {% if university.reps %}
+      {% for rep in university.reps %}
+      <div style="padding:10px 0;{% if not loop.first %}border-top:1px solid var(--line);{% endif %}">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+              <span style="font-weight:600;font-size:13.5px;">{{ rep.name or '—' }}</span>
+              <span style="font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:20px;
+                {% if rep.rep_type == 'international' %}background:#ccfbf1;color:#0f766e;
+                {% else %}background:#e0e7ff;color:#4338ca;{% endif %}">
+                {{ rep.type_label }}
+              </span>
+            </div>
+            {% for email in rep.emails %}
+              <div style="font-size:12.5px;color:var(--teal);margin-bottom:2px;">
+                <a href="mailto:{{ email }}" style="color:var(--teal);">{{ email }}</a>
+              </div>
+            {% endfor %}
+            {% if not rep.emails and rep.email %}
+              <div style="font-size:12.5px;color:var(--teal);margin-bottom:2px;">{{ rep.email }}</div>
+            {% endif %}
+            {% if rep.phone %}
+              <div style="font-size:12px;color:var(--muted);">{{ rep.phone }}</div>
+            {% endif %}
+          </div>
+          <div style="display:flex;gap:4px;flex-shrink:0;">
+            <button class="btn ghost sm"
+              onclick="openEditRep({{ rep.id }}, '{{ rep.name|replace("'","\\'") }}', '{{ (rep.email or '')|replace("'","\\'") }}', '{{ (rep.phone or '')|replace("'","\\'") }}', '{{ rep.rep_type }}')">
+              Edit
+            </button>
+            <form method="POST" action="{{ url_for('university_rep_delete', uid=university.id, rid=rep.id) }}"
+                  onsubmit="return confirm('Remove this contact?')" style="display:inline;">
+              <button type="submit" class="btn danger sm">&#10005;</button>
+            </form>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div style="text-align:center;padding:20px 0;color:var(--muted);font-size:13px;">
+        No contacts added yet.<br>
+        <a href="#" onclick="document.getElementById('dlg-add-rep').showModal();return false;" style="color:var(--teal);">Add first contact</a>
+      </div>
+    {% endif %}
+
+    <div class="info-row" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line);">
       <span class="label">Website</span>
       <span class="value">
         {% if university.website %}
@@ -210,11 +234,97 @@
       </span>
     </div>
     {% if university.notes %}
-    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);line-height:1.6;">
+    <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);line-height:1.6;">
       {{ university.notes }}
     </div>
     {% endif %}
   </div>
+
+  <!-- Add Rep dialog -->
+  <dialog id="dlg-add-rep">
+    <form method="POST" action="{{ url_for('university_rep_add', uid=university.id) }}">
+      <div class="modal-head">
+        <h3>Add Contact</h3>
+        <button type="button" class="modal-close" onclick="this.closest('dialog').close()">&#10005;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Type</label>
+          <select name="rep_type">
+            <option value="international">International Rep</option>
+            <option value="local">Local Rep</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Name *</label>
+          <input type="text" name="name" required placeholder="e.g. Jane Smith">
+        </div>
+        <div class="form-group">
+          <label>Email(s)</label>
+          <textarea name="email" style="min-height:60px;" placeholder="One email per line (or comma-separated)"></textarea>
+          <div class="muted" style="font-size:12px;margin-top:4px;">Enter multiple emails on separate lines.</div>
+        </div>
+        <div class="form-group">
+          <label>Phone</label>
+          <input type="text" name="phone" placeholder="e.g. +44 7700 000000">
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn ghost" onclick="this.closest('dialog').close()">Cancel</button>
+        <button type="submit" class="btn teal">Add Contact</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Edit Rep dialog -->
+  <dialog id="dlg-edit-rep">
+    <form method="POST" id="edit-rep-form">
+      <div class="modal-head">
+        <h3>Edit Contact</h3>
+        <button type="button" class="modal-close" onclick="this.closest('dialog').close()">&#10005;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Type</label>
+          <select name="rep_type" id="edit-rep-type">
+            <option value="international">International Rep</option>
+            <option value="local">Local Rep</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Name *</label>
+          <input type="text" name="name" id="edit-rep-name" required>
+        </div>
+        <div class="form-group">
+          <label>Email(s)</label>
+          <textarea name="email" id="edit-rep-email" style="min-height:60px;"></textarea>
+          <div class="muted" style="font-size:12px;margin-top:4px;">Enter multiple emails on separate lines.</div>
+        </div>
+        <div class="form-group">
+          <label>Phone</label>
+          <input type="text" name="phone" id="edit-rep-phone">
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn ghost" onclick="this.closest('dialog').close()">Cancel</button>
+        <button type="submit" class="btn teal">Save Changes</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+  function openEditRep(id, name, email, phone, type) {
+    document.getElementById('edit-rep-form').action =
+      '/universities/{{ university.id }}/reps/' + id + '/edit';
+    document.getElementById('edit-rep-name').value  = name;
+    document.getElementById('edit-rep-email').value = email.replace(/\\n/g, '\n');
+    document.getElementById('edit-rep-phone').value = phone;
+    document.getElementById('edit-rep-type').value  = type;
+    document.getElementById('dlg-edit-rep').showModal();
+  }
+  document.getElementById('dlg-add-rep').addEventListener('click', function(e){ if(e.target===this)this.close(); });
+  document.getElementById('dlg-edit-rep').addEventListener('click', function(e){ if(e.target===this)this.close(); });
+  </script>
 
   <!-- Commission agreements -->
   <div class="info-card">
@@ -414,50 +524,23 @@
         <label>Follow-up Commission</label>
         <textarea name="follow_up_commission" style="min-height:60px;" placeholder="e.g. 10% in year 2, 5% in year 3 for continuing students">{{ university.follow_up_commission or '' }}</textarea>
       </div>
-      <div style="font-size:12px;font-weight:600;color:var(--teal);margin:8px 0 4px;">International Rep</div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Name</label>
-          <input type="text" name="contact_name" value="{{ university.contact_name or '' }}">
-        </div>
-        <div class="form-group">
-          <label>Email</label>
-          <input type="email" name="contact_email" value="{{ university.contact_email or '' }}">
-        </div>
-      </div>
-      <div class="form-group">
-        <label>Phone</label>
-        <input type="text" name="contact_phone" value="{{ university.contact_phone or '' }}">
-      </div>
-      <div style="font-size:12px;font-weight:600;color:var(--muted);margin:12px 0 4px;border-top:1px solid var(--line);padding-top:12px;">Local Rep</div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Name</label>
-          <input type="text" name="local_rep_name" value="{{ university.local_rep_name or '' }}">
-        </div>
-        <div class="form-group">
-          <label>Email</label>
-          <input type="email" name="local_rep_email" value="{{ university.local_rep_email or '' }}">
-        </div>
+      <div class="muted" style="font-size:12px;padding:10px;background:var(--teal-dim);border-radius:8px;margin-bottom:4px;">
+        Manage contacts using the <strong>Add Contact</strong> button on the university page.
       </div>
       <div class="form-row">
-        <div class="form-group">
-          <label>Phone</label>
-          <input type="text" name="local_rep_phone" value="{{ university.local_rep_phone or '' }}">
-        </div>
         <div class="form-group">
           <label>Website</label>
           <input type="url" name="website" value="{{ university.website or '' }}">
         </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>Agent Code</label>
-            <input type="text" name="agent_code" value="{{ university.agent_code or '' }}" placeholder="e.g. TGM001">
-          </div>
-          <div class="form-group">
-            <label>Supplier ID</label>
-            <input type="text" name="supplier_id" value="{{ university.supplier_id or '' }}" placeholder="e.g. SUP-12345">
-          </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Agent Code</label>
+          <input type="text" name="agent_code" value="{{ university.agent_code or '' }}" placeholder="e.g. TGM001">
+        </div>
+        <div class="form-group">
+          <label>Supplier ID</label>
+          <input type="text" name="supplier_id" value="{{ university.supplier_id or '' }}" placeholder="e.g. SUP-12345">
         </div>
       </div>
       <div class="form-group">

@@ -17,6 +17,21 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--teal);
+  text-decoration: none;
+  letter-spacing: .2px;
+  margin-bottom: 2px;
+  opacity: .85;
+  transition: opacity .15s;
+}
+.back-btn:hover { opacity: 1; }
+
 body {
   font-family: "Segoe UI", system-ui, sans-serif;
   font-size: 14.5px;

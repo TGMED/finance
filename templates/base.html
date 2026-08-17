@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}TGM Finance{% endblock %}</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%230d9488'/><text x='50' y='72' font-size='58' font-family='Arial,sans-serif' font-weight='700' text-anchor='middle' fill='white'>£</text></svg>">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -101,7 +102,8 @@
 <!-- Main content -->
 <div class="main">
   <div class="topbar">
-    <div>
+    <div style="display:flex;flex-direction:column;gap:2px;">
+      {% block back_button %}{% endblock %}
       <div class="topbar-title">{% block page_title %}{% endblock %}</div>
       <div class="topbar-sub">{% block page_sub %}{% endblock %}</div>
     </div>

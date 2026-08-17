@@ -91,8 +91,10 @@ class University(db.Model):
     supplier_id          = db.Column(db.String(100))
     follow_up_commission = db.Column(db.Text)
 
-    students  = db.relationship("Student",           backref="university", lazy=True, cascade="all, delete-orphan")
-    documents = db.relationship("CommissionDocument", backref="university", lazy=True, cascade="all, delete-orphan")
+    students  = db.relationship("Student",            backref="university", lazy=True, cascade="all, delete-orphan")
+    documents = db.relationship("CommissionDocument",  backref="university", lazy=True, cascade="all, delete-orphan")
+    reps      = db.relationship("UniversityRep",       backref="university", lazy=True, cascade="all, delete-orphan",
+                                order_by="UniversityRep.rep_type.desc(), UniversityRep.id")
 
     @property
     def active_students(self):
@@ -109,6 +111,25 @@ class University(db.Model):
     @property
     def total_outstanding(self):
         return self.total_expected - self.total_collected
+
+
+class UniversityRep(db.Model):
+    __tablename__ = "university_reps"
+    id            = db.Column(db.Integer, primary_key=True)
+    university_id = db.Column(db.Integer, db.ForeignKey("universities.id"), nullable=False)
+    name          = db.Column(db.String(200))
+    email         = db.Column(db.Text)    # newline-separated if multiple
+    phone         = db.Column(db.String(200))
+    rep_type      = db.Column(db.String(20), default="international")  # international / local
+    created_at    = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @property
+    def emails(self):
+        return [e.strip() for e in (self.email or "").split("\n") if e.strip()]
+
+    @property
+    def type_label(self):
+        return "International" if self.rep_type == "international" else "Local"
 
 
 class Student(db.Model):
@@ -318,6 +339,30 @@ def ensure_columns():
         conn.commit()
 
 
+def _parse_rep_fields(university_id, names_str, emails_str, phones_str, rep_type):
+    """Split comma/newline-separated rep strings into UniversityRep objects."""
+    import re
+    def split_field(s):
+        if not s:
+            return []
+        parts = re.split(r'[,\n]+', s)
+        return [p.strip() for p in parts if p.strip()]
+
+    names  = split_field(names_str)
+    emails = split_field(emails_str)
+    phones = split_field(phones_str)
+    result = []
+    for i, name in enumerate(names):
+        result.append(UniversityRep(
+            university_id=university_id,
+            name=name,
+            email=emails[i] if i < len(emails) else "",
+            phone=phones[i] if i < len(phones) else "",
+            rep_type=rep_type,
+        ))
+    return result
+
+
 def init_db():
     db.create_all()
     ensure_columns()
@@ -329,6 +374,27 @@ def init_db():
         )
         u.set_password(os.environ.get("ADMIN_PASSWORD", "tgm123"))
         db.session.add(u)
+        db.session.commit()
+    # Migrate old contact_name / local_rep_name fields into university_reps table
+    migrated = False
+    for uni in University.query.all():
+        if uni.reps:
+            continue
+        if uni.contact_name:
+            db.session.add(UniversityRep(
+                university_id=uni.id, name=uni.contact_name,
+                email=uni.contact_email or "", phone=uni.contact_phone or "",
+                rep_type="international",
+            ))
+            migrated = True
+        if uni.local_rep_name:
+            db.session.add(UniversityRep(
+                university_id=uni.id, name=uni.local_rep_name,
+                email=uni.local_rep_email or "", phone=uni.local_rep_phone or "",
+                rep_type="local",
+            ))
+            migrated = True
+    if migrated:
         db.session.commit()
 
 
@@ -786,6 +852,47 @@ def university_edit(uid):
     return redirect(url_for("university_detail", uid=uid))
 
 
+@app.route("/universities/<int:uid>/reps/add", methods=["POST"])
+@login_required
+def university_rep_add(uid):
+    u = db.get_or_404(University, uid)
+    rep = UniversityRep(
+        university_id=uid,
+        name=request.form.get("name", "").strip(),
+        email=request.form.get("email", "").strip(),
+        phone=request.form.get("phone", "").strip(),
+        rep_type=request.form.get("rep_type", "international"),
+    )
+    db.session.add(rep)
+    log_activity("Added", "Rep", f"Added contact '{rep.name}' to {u.name}")
+    db.session.commit()
+    flash("Contact added.", "success")
+    return redirect(url_for("university_detail", uid=uid))
+
+
+@app.route("/universities/<int:uid>/reps/<int:rid>/edit", methods=["POST"])
+@login_required
+def university_rep_edit(uid, rid):
+    rep = db.get_or_404(UniversityRep, rid)
+    rep.name     = request.form.get("name", "").strip()
+    rep.email    = request.form.get("email", "").strip()
+    rep.phone    = request.form.get("phone", "").strip()
+    rep.rep_type = request.form.get("rep_type", rep.rep_type)
+    db.session.commit()
+    flash("Contact updated.", "success")
+    return redirect(url_for("university_detail", uid=uid))
+
+
+@app.route("/universities/<int:uid>/reps/<int:rid>/delete", methods=["POST"])
+@login_required
+def university_rep_delete(uid, rid):
+    rep = db.get_or_404(UniversityRep, rid)
+    db.session.delete(rep)
+    db.session.commit()
+    flash("Contact removed.", "success")
+    return redirect(url_for("university_detail", uid=uid))
+
+
 @app.route("/universities/<int:uid>/comments", methods=["POST"])
 @login_required
 def university_comments(uid):
@@ -928,13 +1035,13 @@ def universities_import():
                 existing.commission_notes= c(6) or None
                 existing.territory       = c(7) or None
                 existing.notes           = c(8) or None
-                existing.contact_name    = c(9) or None
-                existing.contact_email   = c(10) or None
-                existing.contact_phone   = c(11) or None
-                existing.local_rep_name  = c(12) or None
-                existing.local_rep_email = c(13) or None
-                existing.local_rep_phone = c(14) or None
                 existing.agreement_signed= (raw_status == "Active")
+                # Rebuild reps from CSV (clears old ones)
+                for r in list(existing.reps): db.session.delete(r)
+                for r in _parse_rep_fields(existing.id, c(9), c(10), c(11), "international"):
+                    db.session.add(r)
+                for r in _parse_rep_fields(existing.id, c(12), c(13), c(14), "local"):
+                    db.session.add(r)
                 updated += 1
             else:
                 u = University(
@@ -948,16 +1055,15 @@ def universities_import():
                     commission_notes=c(6) or None,
                     territory=c(7) or None,
                     notes=c(8) or None,
-                    contact_name=c(9) or None,
-                    contact_email=c(10) or None,
-                    contact_phone=c(11) or None,
-                    local_rep_name=c(12) or None,
-                    local_rep_email=c(13) or None,
-                    local_rep_phone=c(14) or None,
                     agreement_signed=(raw_status == "Active"),
                     commission_rate=0.0,
                 )
                 db.session.add(u)
+                db.session.flush()  # get u.id
+                for r in _parse_rep_fields(u.id, c(9), c(10), c(11), "international"):
+                    db.session.add(r)
+                for r in _parse_rep_fields(u.id, c(12), c(13), c(14), "local"):
+                    db.session.add(r)
                 added += 1
     else:
         col = {h: i for i, h in enumerate(headers)}
