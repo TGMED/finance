@@ -87,6 +87,9 @@ class University(db.Model):
     local_rep_name       = db.Column(db.String(120))
     local_rep_email      = db.Column(db.String(120))
     local_rep_phone      = db.Column(db.String(60))
+    agent_code           = db.Column(db.String(100))
+    supplier_id          = db.Column(db.String(100))
+    follow_up_commission = db.Column(db.Text)
 
     students  = db.relationship("Student",           backref="university", lazy=True, cascade="all, delete-orphan")
     documents = db.relationship("CommissionDocument", backref="university", lazy=True, cascade="all, delete-orphan")
@@ -298,6 +301,7 @@ def ensure_columns():
             "local_rep_phone":     "VARCHAR(60)",
             "agent_code":          "VARCHAR(100)",
             "supplier_id":         "VARCHAR(100)",
+            "follow_up_commission": "TEXT",
         }.items():
             if col not in existing_uni:
                 conn.execute(text(f"ALTER TABLE universities ADD COLUMN {col} {dtype}"))
@@ -568,7 +572,11 @@ def api_commission_calc():
 _PARSE_SYSTEM = """You are a commission rule extractor for a university recruitment CRM.
 Given commission details text from a university partnership agreement, output ONLY valid JSON — no explanation, no markdown fences.
 
-Use exactly one of these structures:
+Output a JSON object with two keys:
+1. "rules" — the primary commission structure (first year / initial enrolment)
+2. "follow_up" — a plain English string describing any follow-up/continuation commission paid after initial enrolment (year 2+, progression bonuses, continuing students). Empty string "" if none.
+
+For "rules", use exactly one of these structures:
 
 flat_pct — one rate for everyone:
 {"type":"flat_pct","rate":15}
@@ -588,6 +596,9 @@ fixed_by_programme — fixed cash amount per student by programme:
 
 fixed_amount — single fixed cash amount per student:
 {"type":"fixed_amount","currency":"GBP","amount":500}
+
+Example output:
+{"rules":{"type":"flat_pct","rate":15},"follow_up":"10% commission for students who progress from pre-sessional English to their main degree programme."}
 
 Rules:
 - If multiple programmes have different rates, use by_programme.
@@ -630,8 +641,15 @@ def api_parse_commission_rules():
         if clean.startswith("```"):
             clean = clean.split("\n", 1)[-1]
             clean = clean.rsplit("```", 1)[0].strip()
-        rules = json.loads(clean)
-        return jsonify({"rules": rules, "raw": clean})
+        parsed = json.loads(clean)
+        # Support both old format (just rules) and new format (rules + follow_up)
+        if "rules" in parsed and isinstance(parsed["rules"], dict):
+            rules = parsed["rules"]
+            follow_up = parsed.get("follow_up", "")
+        else:
+            rules = parsed
+            follow_up = ""
+        return jsonify({"rules": rules, "follow_up": follow_up, "raw": json.dumps(rules)})
     except json.JSONDecodeError:
         return jsonify({"error": "AI returned invalid JSON", "raw": raw}), 500
     except Exception as e:
@@ -652,6 +670,9 @@ def university_save_commission_rules(uid):
         flash("Invalid rules JSON.", "error")
         return redirect(url_for("university_detail", uid=uid))
     uni.commission_rules = rules_json
+    follow_up = request.form.get("follow_up_commission_ai", "").strip()
+    if follow_up:
+        uni.follow_up_commission = follow_up
     db.session.commit()
     flash("Commission rules saved — calculator will now use these rules.", "success")
     return redirect(url_for("university_detail", uid=uid))
@@ -753,8 +774,9 @@ def university_edit(uid):
     u.local_rep_name     = request.form.get("local_rep_name", "").strip()
     u.local_rep_email    = request.form.get("local_rep_email", "").strip()
     u.local_rep_phone    = request.form.get("local_rep_phone", "").strip()
-    u.agent_code         = request.form.get("agent_code", "").strip()
-    u.supplier_id        = request.form.get("supplier_id", "").strip()
+    u.agent_code          = request.form.get("agent_code", "").strip()
+    u.supplier_id         = request.form.get("supplier_id", "").strip()
+    u.follow_up_commission= request.form.get("follow_up_commission", "").strip()
     u.website            = request.form.get("website", "").strip()
     u.agreement_signed   = bool(request.form.get("agreement_signed"))
     u.notes              = request.form.get("notes", "").strip()
@@ -1325,6 +1347,26 @@ def legal_download(doc_id):
     return send_from_directory(
         app.config["UPLOAD_FOLDER"], doc.filename,
         as_attachment=True, download_name=doc.original_filename,
+    )
+
+
+@app.route("/legal/preview/<int:doc_id>")
+@login_required
+def legal_preview(doc_id):
+    doc = db.get_or_404(CommissionDocument, doc_id)
+    ext = doc.file_ext.lower()
+    mime_map = {
+        "pdf": "application/pdf",
+        "jpg": "image/jpeg", "jpeg": "image/jpeg",
+        "png": "image/png",
+        "doc": "application/msword",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }
+    mime = mime_map.get(ext, "application/octet-stream")
+    return send_from_directory(
+        app.config["UPLOAD_FOLDER"], doc.filename,
+        as_attachment=False, download_name=doc.original_filename,
+        mimetype=mime,
     )
 
 

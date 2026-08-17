@@ -59,6 +59,7 @@
           <td class="muted">{{ doc.uploaded_at.strftime('%d %b %Y') }}</td>
           <td>
             <div style="display:flex;gap:6px;">
+              <button class="btn ghost sm" onclick="openPreview('{{ url_for('legal_preview', doc_id=doc.id) }}','{{ doc.original_filename | replace("'","\\'")|replace('"','\\"') }}','{{ doc.file_ext }}')">&#128065; Preview</button>
               <a href="{{ url_for('legal_download', doc_id=doc.id) }}" class="btn ghost sm">&#8595; Download</a>
               <form method="POST" action="{{ url_for('legal_delete', doc_id=doc.id) }}"
                     onsubmit="return confirm('Delete this document?')" style="display:inline;">
@@ -126,6 +127,73 @@
   </div>
 </div>
 {% endif %}
+
+<!-- Preview modal -->
+<dialog id="dlg-preview" style="width:90vw;max-width:1100px;height:90vh;padding:0;border:none;border-radius:14px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.28);">
+  <div style="display:flex;flex-direction:column;height:100%;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:var(--sidebar,#0f172a);flex-shrink:0;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span id="preview-ext" style="font-size:11px;font-weight:700;background:#e2e8f0;color:#1e293b;padding:2px 8px;border-radius:6px;text-transform:uppercase;"></span>
+        <span id="preview-name" style="font-size:14px;font-weight:600;color:#f1f5f9;"></span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <a id="preview-download-link" href="#" class="btn ghost sm" style="color:#f1f5f9;border-color:rgba(255,255,255,.25);">&#8595; Download</a>
+        <button type="button" onclick="document.getElementById('dlg-preview').close()" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;line-height:1;padding:2px 4px;">&#10005;</button>
+      </div>
+    </div>
+    <div id="preview-body" style="flex:1;overflow:auto;background:#f8fafc;display:flex;align-items:center;justify-content:center;">
+      <div id="preview-loading" style="color:#64748b;font-size:14px;">Loading…</div>
+    </div>
+  </div>
+</dialog>
+
+<script>
+function openPreview(url, filename, ext) {
+  var dlg = document.getElementById('dlg-preview');
+  document.getElementById('preview-name').textContent = filename;
+  document.getElementById('preview-ext').textContent = ext;
+
+  /* find download link by replacing /preview/ with /download/ in the url */
+  var dlLink = document.getElementById('preview-download-link');
+  dlLink.href = url.replace('/legal/preview/', '/legal/download/');
+
+  var body = document.getElementById('preview-body');
+  body.innerHTML = '<div id="preview-loading" style="color:#64748b;font-size:14px;">Loading…</div>';
+
+  var imgExts = ['jpg','jpeg','png','gif','webp'];
+  var el;
+  if (imgExts.indexOf(ext.toLowerCase()) !== -1) {
+    el = document.createElement('img');
+    el.src = url;
+    el.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;box-shadow:0 2px 16px rgba(0,0,0,.12);';
+    el.onload = function() { body.innerHTML = ''; body.appendChild(el); };
+    el.onerror = function() { body.innerHTML = '<div style="color:#ef4444;font-size:14px;padding:32px;">Could not load image.</div>'; };
+  } else if (ext.toLowerCase() === 'pdf') {
+    el = document.createElement('iframe');
+    el.src = url;
+    el.style.cssText = 'width:100%;height:100%;border:none;';
+    el.onload = function() { document.getElementById('preview-loading') && (document.getElementById('preview-loading').style.display='none'); };
+    body.innerHTML = '';
+    body.appendChild(el);
+  } else {
+    body.innerHTML = '<div style="text-align:center;padding:40px;color:#64748b;">' +
+      '<div style="font-size:48px;margin-bottom:16px;">&#128196;</div>' +
+      '<div style="font-size:15px;font-weight:600;margin-bottom:8px;">' + filename + '</div>' +
+      '<div style="font-size:13px;margin-bottom:20px;">This file type cannot be previewed in the browser.</div>' +
+      '<a href="' + dlLink.href + '" class="btn teal">&#8595; Download to view</a>' +
+      '</div>';
+    dlg.showModal();
+    return;
+  }
+
+  dlg.showModal();
+}
+
+/* close on backdrop click */
+document.getElementById('dlg-preview').addEventListener('click', function(e) {
+  if (e.target === this) this.close();
+});
+</script>
 
 <!-- Upload dialog -->
 <dialog id="dlg-upload">
