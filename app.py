@@ -917,23 +917,23 @@ def universities_import():
                 if not update_existing:
                     skipped += 1
                     continue
-                # Update existing record
+                # Update existing record — CSV is source of truth, blank cells clear old values
                 existing.country         = default_country
                 existing.region          = default_region
-                existing.duration        = c(1) or existing.duration
-                existing.contract_start  = c(2) or existing.contract_start
-                existing.contract_end    = c(3) or existing.contract_end
+                existing.duration        = c(1) or None
+                existing.contract_start  = c(2) or None
+                existing.contract_end    = c(3) or None
                 existing.contract_status = raw_status
-                existing.renewal_options = c(5) or existing.renewal_options
-                existing.commission_notes= c(6) or existing.commission_notes
-                existing.territory       = c(7) or existing.territory
-                existing.notes           = c(8) or existing.notes
-                existing.contact_name    = c(9) or existing.contact_name
-                existing.contact_email   = c(10) or existing.contact_email
-                existing.contact_phone   = c(11) or existing.contact_phone
-                existing.local_rep_name  = c(12) or existing.local_rep_name
-                existing.local_rep_email = c(13) or existing.local_rep_email
-                existing.local_rep_phone = c(14) or existing.local_rep_phone
+                existing.renewal_options = c(5) or None
+                existing.commission_notes= c(6) or None
+                existing.territory       = c(7) or None
+                existing.notes           = c(8) or None
+                existing.contact_name    = c(9) or None
+                existing.contact_email   = c(10) or None
+                existing.contact_phone   = c(11) or None
+                existing.local_rep_name  = c(12) or None
+                existing.local_rep_email = c(13) or None
+                existing.local_rep_phone = c(14) or None
                 existing.agreement_signed= (raw_status == "Active")
                 updated += 1
             else:
