@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Activity Log — TGM Finance{% endblock %}
+{% block page_title %}Activity Log{% endblock %}
+{% block page_sub %}All actions taken across the system{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Activity Log</h1>
+    <p>{{ logs | length }} record{{ 's' if logs | length != 1 }}{% if logs | length == 500 %} (showing latest 500){% endif %}</p>
+  </div>
+</div>
+
+<!-- Filters -->
+<form method="GET" class="toolbar" style="margin-bottom:20px;flex-wrap:wrap;gap:8px;">
+  <div class="search-wrap">
+    <span class="search-icon">&#128269;</span>
+    <input type="text" name="q" value="{{ q }}" placeholder="Search summary…" style="background:#fff;">
+  </div>
+  <select name="user" class="filter-sel" style="background:#fff;">
+    <option value="">All Users</option>
+    {% for u in users %}
+      <option value="{{ u }}" {% if user_f == u %}selected{% endif %}>{{ u }}</option>
+    {% endfor %}
+  </select>
+  <select name="action" class="filter-sel" style="background:#fff;">
+    <option value="">All Actions</option>
+    {% for a in actions %}
+      <option value="{{ a }}" {% if action_f == a %}selected{% endif %}>{{ a }}</option>
+    {% endfor %}
+  </select>
+  <select name="entity" class="filter-sel" style="background:#fff;">
+    <option value="">All Types</option>
+    {% for e in entities %}
+      <option value="{{ e }}" {% if entity_f == e %}selected{% endif %}>{{ e }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn ghost">Filter</button>
+  {% if q or user_f or action_f or entity_f %}
+    <a href="{{ url_for('activity_log_view') }}" class="btn ghost">Clear</a>
+  {% endif %}
+</form>
+
+{% if logs %}
+<div class="panel">
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date &amp; Time</th>
+          <th>User</th>
+          <th>Action</th>
+          <th>Type</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td class="muted" style="font-size:12.5px;white-space:nowrap;">
+            {{ log.created_at.strftime('%d %b %Y') }}
+            <span style="color:var(--muted);opacity:.7;">{{ log.created_at.strftime('%H:%M') }}</span>
+          </td>
+          <td>
+            <span style="font-weight:600;font-size:13px;">{{ log.user_name or '—' }}</span>
+          </td>
+          <td>
+            {% set action_colors = {
+              'Created':   ('background:#dcfce7;color:#15803d;', '✚'),
+              'Updated':   ('background:#dbeafe;color:#1d4ed8;', '✎'),
+              'Deleted':   ('background:#fee2e2;color:#b91c1c;', '✕'),
+              'Imported':  ('background:#f3e8ff;color:#7e22ce;', '↑'),
+              'Uploaded':  ('background:#fef9c3;color:#854d0e;', '↑'),
+              'Collected': ('background:#ccfbf1;color:#0f766e;', '£'),
+              'Added':     ('background:#dcfce7;color:#15803d;', '✚'),
+            } %}
+            {% set style, icon = action_colors.get(log.action, ('background:#f1f5f9;color:#475569;', '·')) %}
+            <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap;{{ style }}">
+              {{ icon }} {{ log.action }}
+            </span>
+          </td>
+          <td>
+            <span style="font-size:12px;color:var(--muted);font-weight:500;">{{ log.entity or '—' }}</span>
+          </td>
+          <td style="font-size:13px;max-width:380px;">{{ log.summary or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="panel">
+  <div class="empty">
+    <div class="empty-icon" style="font-size:32px;color:var(--line);">&#9726;</div>
+    <p>No activity records found.</p>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -18,12 +18,16 @@
 </div>
 
 <!-- Filters -->
-<form method="GET" class="toolbar">
-  <div class="search-wrap">
+<form method="GET" class="toolbar" style="flex-wrap:wrap;gap:8px;">
+  <div class="search-wrap" style="flex:1;min-width:200px;">
     <span class="search-icon">&#128269;</span>
     <input type="text" name="q" value="{{ q }}" placeholder="Search name, email, program…" style="background:#fff;">
   </div>
-  <select name="university" class="filter-sel" style="background:#fff;">
+  <button type="submit" class="btn teal">Search</button>
+  <input type="text" id="stu-uni-search" placeholder="Filter by university…"
+    style="background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 12px;font-size:13.5px;min-width:180px;"
+    autocomplete="off" oninput="filterUniSelect('stu-uni-sel', this.value)">
+  <select name="university" id="stu-uni-sel" class="filter-sel" style="background:#fff;">
     <option value="">All Universities</option>
     {% for u in universities %}
       <option value="{{ u.id }}" {% if uni_filter == u.id | string %}selected{% endif %}>{{ u.name }}</option>
@@ -35,7 +39,7 @@
       <option value="{{ st }}" {% if status_filter == st %}selected{% endif %}>{{ st }}</option>
     {% endfor %}
   </select>
-  <button type="submit" class="btn ghost">Filter</button>
+  <button type="submit" class="btn ghost">Apply Filters</button>
   {% if q or status_filter or uni_filter %}
     <a href="{{ url_for('students') }}" class="btn ghost">Clear</a>
   {% endif %}
@@ -163,7 +167,10 @@
       </div>
       <div class="form-group">
         <label>University *</label>
-        <select name="university_id" id="add-uni-sel" required onchange="resetCalc()">
+        <input type="text" id="add-uni-search" placeholder="Type to search universities…"
+          style="margin-bottom:4px;" autocomplete="off"
+          oninput="filterUniSelect('add-uni-sel', this.value)">
+        <select name="university_id" id="add-uni-sel" required onchange="resetCalc()" size="1">
           <option value="">— Select university —</option>
           {% for u in universities %}
             <option value="{{ u.id }}">{{ u.name }}</option>
@@ -322,6 +329,21 @@ function calcCommission() {
       resultEl.style.color = '#ef4444';
       resultEl.textContent = 'Calculation failed. Please try again.';
     });
+}
+
+function filterUniSelect(selectId, query) {
+  var sel = document.getElementById(selectId);
+  var q = query.toLowerCase().trim();
+  var firstMatch = null;
+  for (var i = 0; i < sel.options.length; i++) {
+    var opt = sel.options[i];
+    if (!opt.value) { opt.style.display = ''; continue; }
+    var matches = opt.text.toLowerCase().includes(q);
+    opt.style.display = matches ? '' : 'none';
+    if (matches && !firstMatch) firstMatch = opt;
+  }
+  if (q && firstMatch) sel.value = firstMatch.value;
+  else if (!q) sel.value = '';
 }
 </script>
 {% endblock %}

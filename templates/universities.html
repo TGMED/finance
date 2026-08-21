@@ -13,20 +13,22 @@
     <a href="{{ url_for('universities_export') }}" class="btn ghost">&#8595; Export CSV</a>
     <a href="{{ url_for('universities_import_template') }}" class="btn ghost">&#8681; Import Template</a>
     <button class="btn ghost" onclick="document.getElementById('dlg-import-uni').showModal()">&#8593; Import CSV</button>
+    <button class="btn ghost" onclick="document.getElementById('dlg-add-region').showModal()">+ Add Region</button>
     <button class="btn teal" onclick="document.getElementById('dlg-add-uni').showModal()">+ Add University</button>
   </div>
 </div>
 
 <!-- Filters -->
-<form method="GET" class="toolbar" style="margin-bottom:20px;">
-  <div class="search-wrap">
+<form method="GET" class="toolbar" style="margin-bottom:20px;flex-wrap:wrap;gap:8px;">
+  <div class="search-wrap" style="flex:1;min-width:200px;">
     <span class="search-icon">&#128269;</span>
-    <input type="text" name="q" value="{{ q }}" placeholder="Search name or country…" style="background:#fff;">
+    <input type="text" name="q" value="{{ q }}" placeholder="Search name or country…" style="background:#fff;" id="uni-search-input">
   </div>
+  <button type="submit" class="btn teal">Search</button>
   <select name="region" class="filter-sel" style="background:#fff;">
     <option value="">All Regions</option>
-    {% for r in ['UK','Europe','Canada','North America','Global'] %}
-      <option value="{{ r }}" {% if region_filter == r %}selected{% endif %}>{{ r }}</option>
+    {% for r in regions %}
+      <option value="{{ r.name }}" {% if region_filter == r.name %}selected{% endif %}>{{ r.name }}</option>
     {% endfor %}
   </select>
   <select name="status" class="filter-sel" style="background:#fff;">
@@ -35,7 +37,7 @@
       <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
     {% endfor %}
   </select>
-  <button type="submit" class="btn ghost">Filter</button>
+  <button type="submit" class="btn ghost">Apply Filters</button>
   {% if q or region_filter or status_filter %}
     <a href="{{ url_for('universities') }}" class="btn ghost">Clear</a>
   {% endif %}
@@ -173,13 +175,9 @@
         <div class="form-group">
           <label>Default Region</label>
           <select name="default_region">
-            <option value="UK">UK</option>
-            <option value="Europe">Europe</option>
-            <option value="Canada">Canada</option>
-            <option value="North America">North America</option>
-            <option value="Australia">Australia</option>
-            <option value="Asia Pacific">Asia Pacific</option>
-            <option value="Global">Global</option>
+            {% for r in regions %}
+              <option value="{{ r.name }}">{{ r.name }}</option>
+            {% endfor %}
           </select>
         </div>
       </div>
@@ -227,11 +225,9 @@
           <label>Region</label>
           <select name="region">
             <option value="">— Select —</option>
-            <option value="UK">UK</option>
-            <option value="Europe">Europe</option>
-            <option value="Canada">Canada</option>
-            <option value="North America">North America</option>
-            <option value="Global">Global</option>
+            {% for r in regions %}
+              <option value="{{ r.name }}">{{ r.name }}</option>
+            {% endfor %}
           </select>
         </div>
         <div class="form-group">
@@ -295,6 +291,30 @@
     <div class="modal-foot">
       <button type="button" class="btn ghost" onclick="this.closest('dialog').close()">Cancel</button>
       <button type="submit" class="btn teal">Add University</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Add Region dialog -->
+<dialog id="dlg-add-region">
+  <form method="POST" action="{{ url_for('region_add') }}">
+    <div class="modal-head">
+      <h3>Add New Region</h3>
+      <button type="button" class="modal-close" onclick="this.closest('dialog').close()">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Region Name *</label>
+        <input type="text" name="name" required placeholder="e.g. South America, West Africa…">
+      </div>
+      <div style="margin-top:10px;font-size:12.5px;color:var(--muted);">
+        Current regions:
+        {% for r in regions %}<span style="background:var(--bg);padding:2px 8px;border-radius:12px;margin:2px;display:inline-block;font-size:12px;">{{ r.name }}</span>{% endfor %}
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn ghost" onclick="this.closest('dialog').close()">Cancel</button>
+      <button type="submit" class="btn teal">Add Region</button>
     </div>
   </form>
 </dialog>

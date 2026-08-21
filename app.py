@@ -113,6 +113,13 @@ class University(db.Model):
         return self.total_expected - self.total_collected
 
 
+class Region(db.Model):
+    __tablename__ = "regions"
+    id         = db.Column(db.Integer, primary_key=True)
+    name       = db.Column(db.String(80), unique=True, nullable=False)
+    sort_order = db.Column(db.Integer, default=99)
+
+
 class UniversityRep(db.Model):
     __tablename__ = "university_reps"
     id            = db.Column(db.Integer, primary_key=True)
@@ -375,6 +382,39 @@ def init_db():
         u.set_password(os.environ.get("ADMIN_PASSWORD", "tgm123"))
         db.session.add(u)
         db.session.commit()
+    # Seed default regions
+    default_regions = [
+        ("UK", 1), ("Europe", 2), ("Canada", 3), ("USA", 4),
+        ("Asia Pacific", 5), ("Africa", 6), ("Middle East", 7), ("Global", 8),
+    ]
+    for rname, rsort in default_regions:
+        if not Region.query.filter_by(name=rname).first():
+            db.session.add(Region(name=rname, sort_order=rsort))
+    # Migrate "North America" region to "USA" on existing universities
+    for uni in University.query.filter_by(region="North America").all():
+        uni.region = "USA"
+    # Auto-assign region from country where region is blank
+    country_to_region = {
+        "united states": "USA", "united states of america": "USA", "usa": "USA", "us": "USA",
+        "canada": "Canada",
+        "united kingdom": "UK", "england": "UK", "scotland": "UK", "wales": "UK", "northern ireland": "UK",
+        "australia": "Asia Pacific", "new zealand": "Asia Pacific",
+        "malaysia": "Asia Pacific", "singapore": "Asia Pacific", "hong kong": "Asia Pacific",
+        "india": "Asia Pacific", "china": "Asia Pacific",
+        "nigeria": "Africa", "ghana": "Africa", "kenya": "Africa", "south africa": "Africa",
+        "uae": "Middle East", "united arab emirates": "Middle East",
+        "saudi arabia": "Middle East", "qatar": "Middle East",
+        "germany": "Europe", "france": "Europe", "netherlands": "Europe",
+        "ireland": "Europe", "spain": "Europe", "italy": "Europe",
+    }
+    for uni in University.query.filter(
+        (University.region == None) | (University.region == "")
+    ).all():
+        mapped = country_to_region.get((uni.country or "").lower().strip())
+        if mapped:
+            uni.region = mapped
+    db.session.commit()
+
     # Migrate old contact_name / local_rep_name fields into university_reps table
     migrated = False
     for uni in University.query.all():
@@ -762,10 +802,23 @@ def universities():
         query = query.filter(University.region == region_filter)
     if status_filter:
         query = query.filter(University.contract_status == status_filter)
+    regions = Region.query.order_by(Region.sort_order, Region.name).all()
     return render_template("universities.html",
         universities=query.order_by(University.name).all(),
         q=q, region_filter=region_filter, status_filter=status_filter,
+        regions=regions,
     )
+
+
+@app.route("/regions/add", methods=["POST"])
+@admin_required
+def region_add():
+    name = request.form.get("name", "").strip()
+    if name and not Region.query.filter_by(name=name).first():
+        db.session.add(Region(name=name, sort_order=99))
+        db.session.commit()
+        flash(f"Region '{name}' added.", "success")
+    return redirect(url_for("universities"))
 
 
 @app.route("/universities/add", methods=["POST"])
@@ -1497,6 +1550,37 @@ def legal_delete(doc_id):
 @admin_required
 def team():
     return render_template("team.html", users=User.query.order_by(User.created_at).all())
+
+
+@app.route("/activity")
+@admin_required
+def activity_log_view():
+    q          = request.args.get("q", "").strip()
+    user_f     = request.args.get("user", "").strip()
+    action_f   = request.args.get("action", "").strip()
+    entity_f   = request.args.get("entity", "").strip()
+
+    query = ActivityLog.query
+    if q:
+        query = query.filter(ActivityLog.summary.ilike(f"%{q}%"))
+    if user_f:
+        query = query.filter(ActivityLog.user_name == user_f)
+    if action_f:
+        query = query.filter(ActivityLog.action == action_f)
+    if entity_f:
+        query = query.filter(ActivityLog.entity == entity_f)
+
+    logs   = query.order_by(ActivityLog.created_at.desc()).limit(500).all()
+    users   = db.session.query(ActivityLog.user_name).distinct().order_by(ActivityLog.user_name).all()
+    actions = db.session.query(ActivityLog.action).distinct().order_by(ActivityLog.action).all()
+    entities= db.session.query(ActivityLog.entity).distinct().order_by(ActivityLog.entity).all()
+
+    return render_template("activity_log.html",
+        logs=logs, q=q, user_f=user_f, action_f=action_f, entity_f=entity_f,
+        users=[r[0] for r in users],
+        actions=[r[0] for r in actions],
+        entities=[r[0] for r in entities],
+    )
 
 
 @app.route("/team/add", methods=["POST"])
