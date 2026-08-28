@@ -159,6 +159,9 @@ class Student(db.Model):
     year_of_study              = db.Column(db.Integer, default=1)
     commission_amount_override = db.Column(db.Float)
     created_at                 = db.Column(db.DateTime, default=datetime.utcnow)
+    # Idempotency key for records pushed in from TGM AppHub (e.g. "APPHUB:<app_id>").
+    # Lets the /api/ingest sync update an existing student instead of duplicating.
+    apphub_ref                 = db.Column(db.String(80), unique=True, index=True)
 
     @property
     def effective_rate(self):
@@ -339,6 +342,7 @@ def ensure_columns():
             "programme_category":         "VARCHAR(60)",
             "year_of_study":              "INTEGER DEFAULT 1",
             "commission_amount_override": "FLOAT",
+            "apphub_ref":                 "VARCHAR(80)",
         }.items():
             if col not in existing_stu:
                 conn.execute(text(f"ALTER TABLE students ADD COLUMN {col} {dtype}"))
@@ -1442,6 +1446,98 @@ def students_import():
     log_activity("Imported", "Students", f"Imported {added} students via CSV")
     flash(f"Import complete: {added} added, {skipped} skipped (missing name, university not found, or blank row).", "success")
     return redirect(url_for("students"))
+
+
+# ── APPHUB → FINANCE INGESTION API ──────────────────────────────────────────────
+# TGM AppHub pushes committed students (deposit paid / CAS received) here. Auth is
+# a shared secret in the X-API-Key header (FINANCE_SYNC_KEY, same value on both
+# apps). Idempotent: each record carries an `external_ref` ("APPHUB:<app_id>") and
+# we upsert on Student.apphub_ref, so re-syncing updates rather than duplicates.
+@app.route("/api/ingest", methods=["POST"])
+def api_ingest():
+    expected = (os.environ.get("FINANCE_SYNC_KEY") or "").strip()
+    if not expected:
+        return jsonify({"ok": False, "error": "FINANCE_SYNC_KEY not configured on server"}), 503
+    provided = (request.headers.get("X-API-Key") or "").strip()
+    if not provided or provided != expected:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+    payload = request.get_json(silent=True)
+    records = payload.get("students") if isinstance(payload, dict) else payload
+    if not isinstance(records, list):
+        return jsonify({"ok": False, "error": "expected JSON with a 'students' list"}), 400
+
+    created = updated = unis_created = 0
+    errors = []
+
+    # Phase 1 — make sure every referenced university exists (create missing ones
+    # with a 0% rate for finance staff to fill in later), committed up front so a
+    # per-student rollback below can never undo a university.
+    existing = {u.name.lower(): u.id for u in University.query.all()}
+    for nm in { (r.get("university_name") or "").strip() for r in records if (r.get("university_name") or "").strip() }:
+        if nm.lower() not in existing:
+            u = University(name=nm, commission_rate=0.0, notes="Auto-created from AppHub sync")
+            db.session.add(u)
+            db.session.flush()
+            existing[nm.lower()] = u.id
+            unis_created += 1
+    db.session.commit()
+    # Re-read as plain {name: id} ints — avoids expired-object / autoflush issues
+    # when we reference the id inside the per-student savepoints below.
+    uni_ids = {u.name.lower(): u.id for u in University.query.all()}
+
+    # Phase 2 — upsert each student inside a savepoint so one bad record doesn't
+    # abort the whole batch.
+    for i, rec in enumerate(records):
+        ref = (rec.get("external_ref") or "").strip() or None
+        try:
+            name = (rec.get("name") or "").strip()
+            uni_name = (rec.get("university_name") or "").strip()
+            uni_id = uni_ids.get(uni_name.lower())
+            if not name or not uni_name or uni_id is None:
+                errors.append({"index": i, "ref": ref, "error": "missing name/university, or university could not be resolved"})
+                continue
+            with db.session.no_autoflush:
+                student = Student.query.filter_by(apphub_ref=ref).first() if ref else None
+            is_new = student is None
+            with db.session.begin_nested():
+                if is_new:
+                    student = Student(apphub_ref=ref)
+                    db.session.add(student)
+                student.name               = name
+                student.email              = (rec.get("email") or "").strip() or None
+                student.phone              = (rec.get("phone") or "").strip() or None
+                student.nationality        = (rec.get("nationality") or "").strip() or None
+                student.university_id      = uni_id
+                student.program            = (rec.get("program") or "").strip() or None
+                student.intake             = (rec.get("intake") or "").strip() or None
+                student.programme_category = (rec.get("programme_category") or "").strip() or None
+                student.tuition_amount     = parse_float(rec.get("tuition_amount"))
+                student.currency           = (rec.get("currency") or "USD").strip() or "USD"
+                if rec.get("status"):
+                    student.status = str(rec.get("status")).strip()
+                elif is_new:
+                    student.status = "Prospect"
+                # amount_collected tracks commission finance has actually collected;
+                # only seed it on create, never clobber it on re-sync.
+                if is_new and rec.get("amount_collected") is not None:
+                    student.amount_collected = parse_float(rec.get("amount_collected"))
+                if rec.get("notes"):
+                    student.notes = str(rec.get("notes"))
+            if is_new:
+                created += 1
+            else:
+                updated += 1
+        except Exception as e:
+            errors.append({"index": i, "ref": ref, "error": str(e)})
+
+    db.session.commit()
+    log_activity("Synced", "Students", f"AppHub ingest: {created} created, {updated} updated, {unis_created} universities added")
+    return jsonify({
+        "ok": True, "received": len(records),
+        "created": created, "updated": updated,
+        "universities_created": unis_created, "errors": errors,
+    })
 
 
 # ── LEGAL DOCUMENTS ───────────────────────────────────────────────────────────
