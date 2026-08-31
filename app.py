@@ -756,7 +756,7 @@ def api_parse_commission_rules():
     try:
         client = _anthropic_sdk.Anthropic(api_key=api_key)
         msg = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model="claude-sonnet-4-6",
             max_tokens=512,
             system=_PARSE_SYSTEM,
             messages=[{"role": "user", "content": f"Extract commission rules from:\n\n{text_input}"}],
@@ -767,7 +767,16 @@ def api_parse_commission_rules():
         if clean.startswith("```"):
             clean = clean.split("\n", 1)[-1]
             clean = clean.rsplit("```", 1)[0].strip()
-        parsed = json.loads(clean)
+        # Try direct parse first, then regex-extract the JSON object as fallback
+        try:
+            parsed = json.loads(clean)
+        except json.JSONDecodeError:
+            import re as _re
+            m = _re.search(r'\{.*\}', clean, _re.DOTALL)
+            if m:
+                parsed = json.loads(m.group())
+            else:
+                raise
         # Support both old format (just rules) and new format (rules + follow_up)
         if "rules" in parsed and isinstance(parsed["rules"], dict):
             rules = parsed["rules"]
