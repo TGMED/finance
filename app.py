@@ -167,13 +167,29 @@ class Student(db.Model):
     def effective_rate(self):
         if self.commission_rate is not None:
             return self.commission_rate
+        if self.university and self.university.commission_rules and (self.tuition_amount or 0) > 0:
+            try:
+                amt, _, _, _ = calculate_commission(
+                    self.university, self.programme_category, self.year_of_study or 1, self.tuition_amount or 0
+                )
+                return amt / self.tuition_amount * 100
+            except Exception:
+                pass
         return self.university.commission_rate if self.university else 0.0
 
     @property
     def commission_amount(self):
         if self.commission_amount_override is not None:
             return self.commission_amount_override
-        return self.tuition_amount * self.effective_rate / 100
+        if self.university and self.university.commission_rules and (self.tuition_amount or 0) > 0:
+            try:
+                amt, _, _, _ = calculate_commission(
+                    self.university, self.programme_category, self.year_of_study or 1, self.tuition_amount or 0
+                )
+                return amt
+            except Exception:
+                pass
+        return (self.tuition_amount or 0) * self.effective_rate / 100
 
     @property
     def outstanding(self):
