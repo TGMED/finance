@@ -152,6 +152,18 @@
       <span class="label">Tuition</span>
       <span class="value"><strong>{{ student.tuition_amount | money(student.currency) }}</strong></span>
     </div>
+    {% if student.scholarship_amount %}
+    <div class="info-row">
+      <span class="label">Scholarship</span>
+      <span class="value" style="color:#15803d;font-weight:600;">{{ student.scholarship_amount | money(student.scholarship_currency or student.currency) }}</span>
+    </div>
+    <div class="info-row">
+      <span class="label">Commissionable Amount</span>
+      <span class="value"><strong>{{ student.commissionable_amount | money(student.currency) }}</strong>
+        <span class="muted" style="font-size:11px;margin-left:4px;">(tuition − scholarship)</span>
+      </span>
+    </div>
+    {% endif %}
     <div class="info-row">
       <span class="label">Commission Basis</span>
       <span class="value" style="font-size:12px;color:var(--muted);">{{ comm_breakdown }}</span>
@@ -265,6 +277,23 @@
           <select name="currency">
             {% for cur in ['USD','GBP','EUR','CAD','AUD','NGN'] %}
               <option value="{{ cur }}" {% if cur == student.currency %}selected{% endif %}>{{ cur }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Scholarship Amount <span class="muted">(if any)</span></label>
+          <input type="number" name="scholarship_amount" step="0.01" min="0"
+                 value="{{ student.scholarship_amount if student.scholarship_amount is not none else '' }}"
+                 placeholder="0.00">
+        </div>
+        <div class="form-group">
+          <label>Scholarship Currency</label>
+          <select name="scholarship_currency">
+            <option value="">— Same as tuition —</option>
+            {% for cur in ['USD','GBP','EUR','CAD','AUD','NGN'] %}
+              <option value="{{ cur }}" {% if cur == student.scholarship_currency %}selected{% endif %}>{{ cur }}</option>
             {% endfor %}
           </select>
         </div>

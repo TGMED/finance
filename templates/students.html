@@ -55,6 +55,7 @@
           <th>University</th>
           <th>Program / Intake</th>
           <th class="num">Tuition</th>
+          <th class="num">Commissionable</th>
           <th class="num">Rate</th>
           <th class="num">Commission</th>
           <th class="num">Collected</th>
@@ -79,7 +80,10 @@
             {{ s.program or '—' }}
             {% if s.intake %}<div class="muted" style="font-size:12px;">{{ s.intake }}</div>{% endif %}
           </td>
-          <td class="num">{{ s.tuition_amount | money(s.currency) }}</td>
+          <td class="num">{{ s.tuition_amount | money(s.currency) }}
+            {% if s.scholarship_amount %}<div class="muted" style="font-size:11px;">Sch: {{ s.scholarship_amount | money(s.scholarship_currency or s.currency) }}</div>{% endif %}
+          </td>
+          <td class="num"><strong>{{ s.commissionable_amount | money(s.currency) }}</strong></td>
           <td class="num">{{ s.effective_rate | pct }}
             {% if s.commission_rate is not none %}
               <span title="Custom rate" style="color:var(--teal);font-size:11px;">✦</span>

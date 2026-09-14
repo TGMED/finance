@@ -158,21 +158,29 @@ class Student(db.Model):
     programme_category         = db.Column(db.String(60))
     year_of_study              = db.Column(db.Integer, default=1)
     commission_amount_override = db.Column(db.Float)
+    scholarship_amount         = db.Column(db.Float)
+    scholarship_currency       = db.Column(db.String(10))
     created_at                 = db.Column(db.DateTime, default=datetime.utcnow)
     # Idempotency key for records pushed in from TGM AppHub (e.g. "APPHUB:<app_id>").
     # Lets the /api/ingest sync update an existing student instead of duplicating.
     apphub_ref                 = db.Column(db.String(80), unique=True, index=True)
 
     @property
+    def commissionable_amount(self):
+        """Tuition minus scholarship — the base on which commission is calculated."""
+        return max(0.0, (self.tuition_amount or 0) - (self.scholarship_amount or 0))
+
+    @property
     def effective_rate(self):
         if self.commission_rate is not None:
             return self.commission_rate
-        if self.university and self.university.commission_rules and (self.tuition_amount or 0) > 0:
+        base = self.commissionable_amount
+        if self.university and self.university.commission_rules and base > 0:
             try:
                 amt, _, _, _ = calculate_commission(
-                    self.university, self.programme_category, self.year_of_study or 1, self.tuition_amount or 0
+                    self.university, self.programme_category, self.year_of_study or 1, base
                 )
-                return amt / self.tuition_amount * 100
+                return amt / base * 100
             except Exception:
                 pass
         return self.university.commission_rate if self.university else 0.0
@@ -181,15 +189,16 @@ class Student(db.Model):
     def commission_amount(self):
         if self.commission_amount_override is not None:
             return self.commission_amount_override
-        if self.university and self.university.commission_rules and (self.tuition_amount or 0) > 0:
+        base = self.commissionable_amount
+        if self.university and self.university.commission_rules and base > 0:
             try:
                 amt, _, _, _ = calculate_commission(
-                    self.university, self.programme_category, self.year_of_study or 1, self.tuition_amount or 0
+                    self.university, self.programme_category, self.year_of_study or 1, base
                 )
                 return amt
             except Exception:
                 pass
-        return (self.tuition_amount or 0) * self.effective_rate / 100
+        return base * self.effective_rate / 100
 
     @property
     def outstanding(self):
@@ -358,6 +367,8 @@ def ensure_columns():
             "programme_category":         "VARCHAR(60)",
             "year_of_study":              "INTEGER DEFAULT 1",
             "commission_amount_override": "FLOAT",
+            "scholarship_amount":         "FLOAT",
+            "scholarship_currency":       "VARCHAR(10)",
             "apphub_ref":                 "VARCHAR(80)",
         }.items():
             if col not in existing_stu:
@@ -1330,6 +1341,9 @@ def student_edit(sid):
     s.program         = request.form.get("program", "").strip()
     s.intake          = request.form.get("intake", "").strip()
     s.tuition_amount  = parse_float(request.form.get("tuition_amount"), s.tuition_amount)
+    sch_str = request.form.get("scholarship_amount", "").strip()
+    s.scholarship_amount   = parse_float(sch_str) if sch_str else None
+    s.scholarship_currency = request.form.get("scholarship_currency", "").strip() or None
     rate_str = request.form.get("commission_rate", "").strip()
     s.commission_rate = parse_float(rate_str) if rate_str else None
     override_str = request.form.get("commission_amount_override", "").strip()
@@ -1537,8 +1551,11 @@ def api_ingest():
                 student.program            = (rec.get("program") or "").strip() or None
                 student.intake             = (rec.get("intake") or "").strip() or None
                 student.programme_category = (rec.get("programme_category") or "").strip() or None
-                student.tuition_amount     = parse_float(rec.get("tuition_amount"))
-                student.currency           = (rec.get("currency") or "USD").strip() or "USD"
+                student.tuition_amount      = parse_float(rec.get("tuition_amount"))
+                student.currency            = (rec.get("currency") or "USD").strip() or "USD"
+                if rec.get("scholarship_amount") is not None:
+                    student.scholarship_amount   = parse_float(rec.get("scholarship_amount"))
+                    student.scholarship_currency = (rec.get("scholarship_currency") or "").strip() or None
                 if rec.get("status"):
                     student.status = str(rec.get("status")).strip()
                 elif is_new:
