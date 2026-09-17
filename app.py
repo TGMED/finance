@@ -1253,6 +1253,7 @@ def students():
     q          = request.args.get("q", "").strip()
     sf         = request.args.get("status", "")
     uf         = request.args.get("university", "")
+    intakes_f  = request.args.getlist("intake")   # multi-value
     query      = Student.query
     if q:
         query = query.filter(
@@ -1262,11 +1263,18 @@ def students():
         query = query.filter(Student.status == sf)
     if uf:
         query = query.filter(Student.university_id == int(uf))
+    if intakes_f:
+        query = query.filter(Student.intake.in_(intakes_f))
+    all_intakes = sorted(
+        {s.intake for s in Student.query.with_entities(Student.intake).all() if s.intake},
+        key=lambda x: x or ""
+    )
     return render_template("students.html",
         students=query.order_by(Student.created_at.desc()).all(),
         universities=University.query.order_by(University.name).all(),
         programme_categories=PROGRAMME_CATEGORIES,
         q=q, status_filter=sf, uni_filter=uf,
+        all_intakes=all_intakes, intakes_filter=intakes_f,
     )
 
 

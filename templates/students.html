@@ -18,7 +18,7 @@
 </div>
 
 <!-- Filters -->
-<form method="GET" class="toolbar" style="flex-wrap:wrap;gap:8px;">
+<form method="GET" class="toolbar" style="flex-wrap:wrap;gap:8px;" id="stu-filter-form">
   <div class="search-wrap" style="flex:1;min-width:200px;">
     <span class="search-icon">&#128269;</span>
     <input type="text" name="q" value="{{ q }}" placeholder="Search name, email, program…" style="background:#fff;">
@@ -39,8 +39,26 @@
       <option value="{{ st }}" {% if status_filter == st %}selected{% endif %}>{{ st }}</option>
     {% endfor %}
   </select>
+  <!-- Multi-select intake dropdown -->
+  {% if all_intakes %}
+  <div class="multi-sel-wrap" id="intake-wrap">
+    <button type="button" class="filter-sel multi-sel-btn" id="intake-btn" onclick="toggleIntakeDrop(event)"
+      style="background:#fff;text-align:left;cursor:pointer;min-width:160px;">
+      <span id="intake-label">{% if intakes_filter %}{{ intakes_filter | length }} Intake{{ 's' if intakes_filter | length != 1 }}{% else %}All Intakes{% endif %}</span>
+      <span style="float:right;opacity:.5;">&#9660;</span>
+    </button>
+    <div class="multi-sel-drop" id="intake-drop" style="display:none;">
+      {% for intake in all_intakes %}
+      <label class="multi-sel-opt">
+        <input type="checkbox" name="intake" value="{{ intake }}" {% if intake in intakes_filter %}checked{% endif %}>
+        {{ intake }}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
   <button type="submit" class="btn ghost">Apply Filters</button>
-  {% if q or status_filter or uni_filter %}
+  {% if q or status_filter or uni_filter or intakes_filter %}
     <a href="{{ url_for('students') }}" class="btn ghost">Clear</a>
   {% endif %}
 </form>
@@ -349,5 +367,46 @@ function filterUniSelect(selectId, query) {
   if (q && firstMatch) sel.value = firstMatch.value;
   else if (!q) sel.value = '';
 }
+
+function toggleIntakeDrop(e) {
+  e.stopPropagation();
+  var drop = document.getElementById('intake-drop');
+  drop.style.display = drop.style.display === 'none' ? 'block' : 'none';
+}
+document.addEventListener('click', function(e) {
+  var wrap = document.getElementById('intake-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    document.getElementById('intake-drop').style.display = 'none';
+  }
+});
+document.addEventListener('DOMContentLoaded', function() {
+  var boxes = document.querySelectorAll('#intake-drop input[type=checkbox]');
+  boxes.forEach(function(cb) { cb.addEventListener('change', updateIntakeLabel); });
+  updateIntakeLabel();
+});
+function updateIntakeLabel() {
+  var checked = document.querySelectorAll('#intake-drop input[type=checkbox]:checked');
+  var lbl = document.getElementById('intake-label');
+  if (!lbl) return;
+  lbl.textContent = checked.length ? checked.length + ' Intake' + (checked.length > 1 ? 's' : '') : 'All Intakes';
+}
 </script>
+
+<style>
+.multi-sel-wrap { position:relative; }
+.multi-sel-btn  { border:1px solid var(--line); border-radius:8px; padding:6px 12px; font-size:13.5px; background:#fff; }
+.multi-sel-drop {
+  position:absolute; top:calc(100% + 4px); left:0; z-index:200;
+  background:#fff; border:1px solid var(--line); border-radius:10px;
+  box-shadow:0 4px 18px rgba(0,0,0,.12); min-width:220px; max-height:260px;
+  overflow-y:auto; padding:6px 0;
+}
+.multi-sel-opt {
+  display:flex; align-items:center; gap:8px;
+  padding:7px 14px; font-size:13px; cursor:pointer;
+  transition:background .12s;
+}
+.multi-sel-opt:hover { background:var(--teal-dim); }
+.multi-sel-opt input { accent-color:var(--teal); width:15px; height:15px; cursor:pointer; }
+</style>
 {% endblock %}
