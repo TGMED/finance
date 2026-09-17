@@ -177,8 +177,9 @@ class Student(db.Model):
         base = self.commissionable_amount
         if self.university and self.university.commission_rules and base > 0:
             try:
+                student_count = len(self.university.active_students)
                 amt, _, _, _ = calculate_commission(
-                    self.university, self.programme_category, self.year_of_study or 1, base
+                    self.university, self.programme_category, self.year_of_study or 1, base, student_count
                 )
                 return amt / base * 100
             except Exception:
@@ -192,8 +193,9 @@ class Student(db.Model):
         base = self.commissionable_amount
         if self.university and self.university.commission_rules and base > 0:
             try:
+                student_count = len(self.university.active_students)
                 amt, _, _, _ = calculate_commission(
-                    self.university, self.programme_category, self.year_of_study or 1, base
+                    self.university, self.programme_category, self.year_of_study or 1, base, student_count
                 )
                 return amt
             except Exception:
