@@ -727,8 +727,8 @@ Programme values (lowercase): undergraduate, postgraduate, phd, diploma, foundat
 tiered_by_year — rate drops/changes by year of study:
 {"type":"tiered_by_year","tiers":[{"year":1,"rate":15},{"year":2,"rate":10}],"default_rate":10}
 
-tiered_by_volume — rate changes based on total students sent:
-{"type":"tiered_by_volume","tiers":[{"min":1,"max":5,"rate":10},{"min":6,"rate":15}]}
+tiered_by_volume — rate changes based on total students sent (use this whenever volume tiers like "5-9 students" or "10+ students" are mentioned, even if a base rate also exists):
+{"type":"tiered_by_volume","tiers":[{"min":1,"max":4,"rate":15},{"min":5,"max":9,"rate":17.5},{"min":10,"rate":20}]}
 
 fixed_by_programme — fixed cash amount per student by programme:
 {"type":"fixed_by_programme","currency":"GBP","rules":[{"programme":"undergraduate","amount":1000}],"default_amount":500}
@@ -740,8 +740,9 @@ Example output:
 {"rules":{"type":"flat_pct","rate":15},"follow_up":"10% commission for students who progress from pre-sessional English to their main degree programme."}
 
 Rules:
-- If multiple programmes have different rates, use by_programme.
-- If a single rate applies to everything, use flat_pct.
+- IMPORTANT: If volume tiers are mentioned (e.g. "5-9 students", "10+ students", different rates by number of students), ALWAYS use tiered_by_volume as the primary rule type — even if there is also a base rate. Put programme-specific exceptions (e.g. alumni rate, pre-sessional rate, fixed MBChB fee) in the follow_up string.
+- If multiple programmes have different rates but NO volume tiers, use by_programme.
+- If a single rate applies to everything with no tiers, use flat_pct.
 - Currency defaults to GBP unless stated otherwise.
 - Output ONLY the JSON object, nothing else."""
 
