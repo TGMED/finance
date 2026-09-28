@@ -341,7 +341,8 @@
           <div style="font-size:11.5px;color:var(--muted);margin-top:2px;">{{ doc.size_display }} &bull; {{ doc.uploaded_at.strftime('%d %b %Y') }}</div>
         </div>
         <div style="display:flex;gap:6px;">
-          <a href="{{ url_for('legal_download', doc_id=doc.id) }}" class="btn ghost sm">&#8595;</a>
+          <button class="btn ghost sm" onclick="openDocPreview('{{ url_for('legal_preview', doc_id=doc.id) }}', '{{ doc.original_filename|replace("'","\\'")|replace('"', '&quot;') }}', '{{ doc.file_ext.lower() }}')" title="Preview">&#128065;</button>
+          <a href="{{ url_for('legal_download', doc_id=doc.id) }}" class="btn ghost sm" title="Download">&#8595;</a>
           <form method="POST" action="{{ url_for('legal_delete', doc_id=doc.id) }}"
                 onsubmit="return confirm('Delete this document?')" style="display:inline;">
             <button type="submit" class="btn danger sm">&#10005;</button>
@@ -361,6 +362,19 @@
     {% endif %}
   </div>
 </div>
+
+<!-- Document Preview Modal -->
+<dialog id="dlg-doc-preview" style="width:min(900px,95vw);max-height:90vh;padding:0;border:none;border-radius:12px;overflow:hidden;background:var(--card);">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--card);">
+    <span id="dlg-doc-preview-title" style="font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:calc(100% - 100px);"></span>
+    <div style="display:flex;gap:8px;flex-shrink:0;">
+      <a id="dlg-doc-preview-dl" href="#" class="btn ghost sm" title="Download">&#8595; Download</a>
+      <button class="btn ghost sm" onclick="document.getElementById('dlg-doc-preview').close()">&#10005;</button>
+    </div>
+  </div>
+  <div id="dlg-doc-preview-body" style="height:75vh;overflow:auto;background:#f0f0f0;display:flex;align-items:center;justify-content:center;">
+  </div>
+</dialog>
 
 <!-- Additional Comments -->
 <div class="panel" style="margin-bottom:24px;">
@@ -491,6 +505,13 @@
             {% for r in ['UK','Canada','North America','Global'] %}
               <option value="{{ r }}" {% if r == university.region %}selected{% endif %}>{{ r }}</option>
             {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Institution Type</label>
+          <select name="institution_type">
+            <option value="university" {% if (university.institution_type or 'university') == 'university' %}selected{% endif %}>University</option>
+            <option value="pathway" {% if university.institution_type == 'pathway' %}selected{% endif %}>Pathway Provider</option>
           </select>
         </div>
         <div class="form-group">
@@ -760,6 +781,33 @@ function applyUniIntakeFilter() {
     subtotal.style.display = 'none';
   }
 }
+
+function openDocPreview(previewUrl, filename, ext) {
+  var body = document.getElementById('dlg-doc-preview-body');
+  var title = document.getElementById('dlg-doc-preview-title');
+  var dlLink = document.getElementById('dlg-doc-preview-dl');
+  title.textContent = filename;
+  dlLink.href = previewUrl.replace('/preview/', '/download/');
+  body.innerHTML = '';
+  var imgExts = ['jpg','jpeg','png','gif','webp'];
+  if (imgExts.indexOf(ext) !== -1) {
+    var img = document.createElement('img');
+    img.src = previewUrl;
+    img.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;display:block;margin:auto;';
+    body.style.padding = '16px';
+    body.appendChild(img);
+  } else {
+    var iframe = document.createElement('iframe');
+    iframe.src = previewUrl;
+    iframe.style.cssText = 'width:100%;height:100%;border:none;display:block;';
+    body.style.padding = '0';
+    body.appendChild(iframe);
+  }
+  document.getElementById('dlg-doc-preview').showModal();
+}
+document.getElementById('dlg-doc-preview').addEventListener('click', function(e) {
+  if (e.target === this) this.close();
+});
 </script>
 
 <style>

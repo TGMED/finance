@@ -83,6 +83,7 @@ class University(db.Model):
     region               = db.Column(db.String(60))
     additional_comments  = db.Column(db.Text)
     commission_type      = db.Column(db.String(30))
+    institution_type     = db.Column(db.String(20), default="university")  # "university" or "pathway"
     commission_rules     = db.Column(db.Text)       # JSON rule engine
     local_rep_name       = db.Column(db.String(120))
     local_rep_email      = db.Column(db.String(120))
@@ -353,6 +354,7 @@ def ensure_columns():
             "region":              "VARCHAR(60)",
             "additional_comments": "TEXT",
             "commission_type":     "VARCHAR(30)",
+            "institution_type":    "VARCHAR(20) DEFAULT 'university'",
             "commission_rules":    "TEXT",
             "local_rep_name":      "VARCHAR(120)",
             "local_rep_email":     "VARCHAR(120)",
@@ -835,7 +837,8 @@ def universities():
     q             = request.args.get("q", "").strip()
     region_filter = request.args.get("region", "").strip()
     status_filter = request.args.get("status", "").strip()
-    query = University.query
+    tab           = request.args.get("tab", "university")   # "university" or "pathway"
+    query = University.query.filter(University.institution_type == tab)
     if q:
         query = query.filter(
             University.name.ilike(f"%{q}%") | University.country.ilike(f"%{q}%") |
@@ -849,7 +852,7 @@ def universities():
     return render_template("universities.html",
         universities=query.order_by(University.name).all(),
         q=q, region_filter=region_filter, status_filter=status_filter,
-        regions=regions,
+        regions=regions, active_tab=tab,
     )
 
 
@@ -894,6 +897,7 @@ def university_add():
         website=request.form.get("website", "").strip(),
         agreement_signed=bool(request.form.get("agreement_signed")),
         notes=request.form.get("notes", "").strip(),
+        institution_type=request.form.get("institution_type", "university"),
     )
     db.session.add(u)
     log_activity("Created", "University", f"Added university: {name}")
@@ -942,6 +946,7 @@ def university_edit(uid):
     u.website            = request.form.get("website", "").strip()
     u.agreement_signed   = bool(request.form.get("agreement_signed"))
     u.notes              = request.form.get("notes", "").strip()
+    u.institution_type   = request.form.get("institution_type", "university")
     log_activity("Updated", "University", f"Edited: {u.name}")
     db.session.commit()
     flash("University updated.", "success")
@@ -1797,4 +1802,4 @@ def team_delete(uid):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5001)
+    app.run(debug=True, port=5003)

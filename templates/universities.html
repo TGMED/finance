@@ -6,7 +6,7 @@
 {% block content %}
 <div class="page-header">
   <div>
-    <h1>Universities</h1>
+    <h1>{% if active_tab == 'pathway' %}Pathway Providers{% else %}Universities{% endif %}</h1>
     <p>{{ universities | length }} institution{{ 's' if universities | length != 1 }}</p>
   </div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -14,12 +14,25 @@
     <a href="{{ url_for('universities_import_template') }}" class="btn ghost">&#8681; Import Template</a>
     <button class="btn ghost" onclick="document.getElementById('dlg-import-uni').showModal()">&#8593; Import CSV</button>
     <button class="btn ghost" onclick="document.getElementById('dlg-add-region').showModal()">+ Add Region</button>
-    <button class="btn teal" onclick="document.getElementById('dlg-add-uni').showModal()">+ Add University</button>
+    <button class="btn teal" onclick="document.getElementById('dlg-add-uni').showModal()">+ {% if active_tab == 'pathway' %}Add Pathway{% else %}Add University{% endif %}</button>
   </div>
+</div>
+
+<!-- Tab switcher -->
+<div style="display:flex;gap:0;margin-bottom:20px;border-bottom:2px solid var(--line);">
+  <a href="{{ url_for('universities', tab='university', q=q, region=region_filter, status=status_filter) }}"
+     style="padding:10px 24px;font-size:14px;font-weight:600;text-decoration:none;border-bottom:3px solid {% if active_tab != 'pathway' %}var(--teal){% else %}transparent{% endif %};color:{% if active_tab != 'pathway' %}var(--teal){% else %}var(--muted){% endif %};margin-bottom:-2px;">
+    Universities
+  </a>
+  <a href="{{ url_for('universities', tab='pathway', q=q, region=region_filter, status=status_filter) }}"
+     style="padding:10px 24px;font-size:14px;font-weight:600;text-decoration:none;border-bottom:3px solid {% if active_tab == 'pathway' %}var(--teal){% else %}transparent{% endif %};color:{% if active_tab == 'pathway' %}var(--teal){% else %}var(--muted){% endif %};margin-bottom:-2px;">
+    Pathway Providers
+  </a>
 </div>
 
 <!-- Filters -->
 <form method="GET" class="toolbar" style="margin-bottom:20px;flex-wrap:wrap;gap:8px;">
+  <input type="hidden" name="tab" value="{{ active_tab }}">
   <div class="search-wrap" style="flex:1;min-width:200px;">
     <span class="search-icon">&#128269;</span>
     <input type="text" name="q" value="{{ q }}" placeholder="Search name or country…" style="background:#fff;" id="uni-search-input">
@@ -207,7 +220,14 @@
     </div>
     <div class="modal-body">
       <div class="form-group">
-        <label>University Name *</label>
+        <label>Type</label>
+        <select name="institution_type">
+          <option value="university" {% if active_tab != 'pathway' %}selected{% endif %}>University</option>
+          <option value="pathway" {% if active_tab == 'pathway' %}selected{% endif %}>Pathway Provider</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>University / Provider Name *</label>
         <input type="text" name="name" required placeholder="e.g. University of Manchester">
       </div>
       <div class="form-row">

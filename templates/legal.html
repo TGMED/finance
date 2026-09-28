@@ -16,6 +16,10 @@
 
 <!-- University filter -->
 <form method="GET" class="toolbar" style="margin-bottom:20px;">
+  <input type="text" id="doc-search" name="q" value="{{ request.args.get('q','') }}"
+         placeholder="Search documents…"
+         style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;min-width:240px;background:var(--input-bg,#fff);color:var(--text);"
+         oninput="filterDocs(this.value)">
   <select name="university" class="filter-sel" style="background:#fff;min-width:220px;">
     <option value="">All Universities</option>
     {% for u in universities %}
@@ -23,7 +27,7 @@
     {% endfor %}
   </select>
   <button type="submit" class="btn ghost">Filter</button>
-  {% if uni_filter %}<a href="{{ url_for('legal') }}" class="btn ghost">Clear</a>{% endif %}
+  {% if uni_filter or request.args.get('q') %}<a href="{{ url_for('legal') }}" class="btn ghost">Clear</a>{% endif %}
 </form>
 
 {% if documents %}
@@ -193,6 +197,21 @@ function openPreview(url, filename, ext) {
 document.getElementById('dlg-preview').addEventListener('click', function(e) {
   if (e.target === this) this.close();
 });
+
+/* live document search */
+function filterDocs(q) {
+  var term = q.toLowerCase().trim();
+  var rows = document.querySelectorAll('table tbody tr');
+  rows.forEach(function(row) {
+    var text = row.textContent.toLowerCase();
+    row.style.display = (!term || text.indexOf(term) !== -1) ? '' : 'none';
+  });
+}
+/* apply on load if q param present */
+(function() {
+  var input = document.getElementById('doc-search');
+  if (input && input.value) filterDocs(input.value);
+})();
 </script>
 
 <!-- Upload dialog -->
