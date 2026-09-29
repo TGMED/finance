@@ -3,7 +3,7 @@ try:
     import anthropic as _anthropic_sdk
 except ImportError:
     _anthropic_sdk = None
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from functools import wraps
 from sqlalchemy import text
 from flask import (Flask, render_template, request, redirect, url_for,
@@ -171,6 +171,13 @@ class Student(db.Model):
         """Tuition minus scholarship — the base on which commission is calculated."""
         return max(0.0, (self.tuition_amount or 0) - (self.scholarship_amount or 0))
 
+    def _intake_student_count(self):
+        """Count active students in the same intake — volume tiers reset per intake."""
+        active = self.university.active_students if self.university else []
+        if self.intake:
+            return len([s for s in active if s.intake == self.intake])
+        return len(active)
+
     @property
     def effective_rate(self):
         if self.commission_rate is not None:
@@ -178,9 +185,9 @@ class Student(db.Model):
         base = self.commissionable_amount
         if self.university and self.university.commission_rules and base > 0:
             try:
-                student_count = len(self.university.active_students)
                 amt, _, _, _ = calculate_commission(
-                    self.university, self.programme_category, self.year_of_study or 1, base, student_count
+                    self.university, self.programme_category, self.year_of_study or 1, base,
+                    self._intake_student_count()
                 )
                 return amt / base * 100
             except Exception:
@@ -194,9 +201,9 @@ class Student(db.Model):
         base = self.commissionable_amount
         if self.university and self.university.commission_rules and base > 0:
             try:
-                student_count = len(self.university.active_students)
                 amt, _, _, _ = calculate_commission(
-                    self.university, self.programme_category, self.year_of_study or 1, base, student_count
+                    self.university, self.programme_category, self.year_of_study or 1, base,
+                    self._intake_student_count()
                 )
                 return amt
             except Exception:
@@ -247,6 +254,34 @@ class ActivityLog(db.Model):
     entity     = db.Column(db.String(40))
     summary    = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class CommissionInvoice(db.Model):
+    __tablename__ = "commission_invoices"
+    id             = db.Column(db.Integer, primary_key=True)
+    university_id  = db.Column(db.Integer, db.ForeignKey("universities.id"), nullable=False)
+    invoice_number = db.Column(db.String(40), unique=True, nullable=False)
+    intake         = db.Column(db.String(80))
+    status         = db.Column(db.String(20), default="Draft")  # Draft/Sent/Paid/Overdue
+    amount         = db.Column(db.Float, default=0.0)
+    currency       = db.Column(db.String(10), default="GBP")
+    issued_date    = db.Column(db.Date, default=date.today)
+    due_date       = db.Column(db.Date)
+    paid_date      = db.Column(db.Date)
+    notes          = db.Column(db.Text)
+    created_by     = db.Column(db.String(120))
+    created_at     = db.Column(db.DateTime, default=datetime.utcnow)
+    university     = db.relationship("University", backref="invoices")
+
+    @property
+    def is_overdue(self):
+        return self.status not in ("Paid",) and self.due_date and self.due_date < date.today()
+
+    @property
+    def status_display(self):
+        if self.is_overdue and self.status == "Sent":
+            return "Overdue"
+        return self.status
 
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -486,6 +521,16 @@ PROGRAMME_CATEGORIES = [
     "Foundation", "MBA", "Other",
 ]
 
+STUDENT_STATUSES = [
+    "Prospect", "Offer Issued", "CAS Issued", "Enrolled", "Arrived", "Deferred", "Cancelled",
+]
+
+
+def next_invoice_number():
+    last = CommissionInvoice.query.order_by(CommissionInvoice.id.desc()).first()
+    n = (last.id + 1) if last else 1
+    return f"TGM-{n:04d}"
+
 def _eval_rule(rules, programme, year, tuition, student_count):
     t = rules.get("type", "")
     prog_lower = (programme or "").lower()
@@ -669,6 +714,32 @@ def dashboard():
 
     recent = Student.query.order_by(Student.created_at.desc()).limit(8).all()
 
+    # Contract expiry alerts (within 90 days)
+    today = date.today()
+    expiry_alerts = []
+    for u in universities:
+        ce = u.contract_end or ""
+        if not ce:
+            continue
+        for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%m/%d/%Y", "%d %b %Y", "%d-%m-%Y"):
+            try:
+                ce_date = datetime.strptime(ce.strip(), fmt).date()
+                days_left = (ce_date - today).days
+                if 0 <= days_left <= 90:
+                    expiry_alerts.append({"university": u, "contract_end": ce_date, "days_left": days_left})
+                break
+            except ValueError:
+                continue
+    expiry_alerts.sort(key=lambda x: x["days_left"])
+
+    # Top universities leaderboard (top 8 by expected commission)
+    top_unis = sorted(uni_rows, key=lambda x: x["expected"], reverse=True)[:8]
+
+    # Pending invoices
+    pending_invoices = CommissionInvoice.query.filter(
+        CommissionInvoice.status.in_(["Draft", "Sent"])
+    ).order_by(CommissionInvoice.due_date).limit(5).all()
+
     return render_template("dashboard.html",
         total_expected=total_expected,
         total_collected=total_collected,
@@ -679,6 +750,9 @@ def dashboard():
         uni_rows=uni_rows,
         recent=recent,
         currency_totals=currency_totals,
+        expiry_alerts=expiry_alerts,
+        top_unis=top_unis,
+        pending_invoices=pending_invoices,
     )
 
 
@@ -701,7 +775,12 @@ def api_commission_calc():
     if not uni:
         return jsonify({"amount": 0, "breakdown": "University not found", "is_milestone": False, "milestones": []})
 
-    student_count = len(uni.active_students) + 1
+    intake = request.args.get("intake", "").strip()
+    active = uni.active_students
+    if intake:
+        student_count = len([s for s in active if s.intake == intake]) + 1
+    else:
+        student_count = len(active) + 1
     amount, breakdown, is_milestone, milestones = calculate_commission(
         uni, programme, year, tuition, student_count
     )
@@ -1799,6 +1878,356 @@ def team_delete(uid):
     db.session.commit()
     flash(f"User '{name}' removed.", "success")
     return redirect(url_for("team"))
+
+
+# ── INVOICES ──────────────────────────────────────────────────────────────────
+
+@app.route("/invoices")
+@login_required
+def invoices():
+    status_f = request.args.get("status", "")
+    uni_f    = request.args.get("university", "")
+    query    = CommissionInvoice.query
+    if status_f:
+        query = query.filter(CommissionInvoice.status == status_f)
+    if uni_f:
+        query = query.filter(CommissionInvoice.university_id == int(uni_f))
+    all_invoices = query.order_by(CommissionInvoice.created_at.desc()).all()
+    # Mark overdue automatically
+    for inv in all_invoices:
+        if inv.status == "Sent" and inv.due_date and inv.due_date < date.today():
+            inv.status = "Overdue"
+    db.session.commit()
+    total_due       = sum(i.amount for i in all_invoices if i.status in ("Sent", "Overdue", "Draft"))
+    total_paid      = sum(i.amount for i in all_invoices if i.status == "Paid")
+    total_overdue   = sum(i.amount for i in all_invoices if i.status == "Overdue")
+    return render_template("invoices.html",
+        invoices=all_invoices,
+        universities=University.query.order_by(University.name).all(),
+        status_filter=status_f, uni_filter=uni_f,
+        total_due=total_due, total_paid=total_paid, total_overdue=total_overdue,
+    )
+
+
+@app.route("/invoices/new", methods=["GET", "POST"])
+@login_required
+def invoice_new():
+    universities = University.query.order_by(University.name).all()
+    if request.method == "POST":
+        uni_id = request.form.get("university_id", "").strip()
+        if not uni_id:
+            flash("Select a university.", "error")
+            return redirect(url_for("invoice_new"))
+        uni = db.session.get(University, int(uni_id))
+        intake = request.form.get("intake", "").strip()
+        amount_str = request.form.get("amount", "").strip()
+        # Auto-calculate from students in this intake if amount not provided
+        if amount_str:
+            amount = parse_float(amount_str)
+        else:
+            intake_students = [s for s in uni.active_students if (s.intake or "") == intake] if intake else uni.active_students
+            amount = sum(s.commission_amount for s in intake_students)
+        due_str = request.form.get("due_date", "").strip()
+        due_date_val = None
+        if due_str:
+            try:
+                due_date_val = datetime.strptime(due_str, "%Y-%m-%d").date()
+            except ValueError:
+                pass
+        inv = CommissionInvoice(
+            university_id=int(uni_id),
+            invoice_number=next_invoice_number(),
+            intake=intake or None,
+            status=request.form.get("status", "Draft"),
+            amount=amount,
+            currency=request.form.get("currency", "GBP"),
+            issued_date=date.today(),
+            due_date=due_date_val,
+            notes=request.form.get("notes", "").strip() or None,
+            created_by=session.get("user_name"),
+        )
+        db.session.add(inv)
+        log_activity("Created", "Invoice", f"{inv.invoice_number} for {uni.name} — {inv.currency} {amount:,.2f}")
+        db.session.commit()
+        flash(f"Invoice {inv.invoice_number} created.", "success")
+        return redirect(url_for("invoice_detail", inv_id=inv.id))
+    # Pre-fill university / intake from query params
+    pre_uni = request.args.get("university_id", "")
+    pre_intake = request.args.get("intake", "")
+    pre_amount = ""
+    if pre_uni and pre_intake:
+        uni = db.session.get(University, int(pre_uni))
+        if uni:
+            students_in_intake = [s for s in uni.active_students if (s.intake or "") == pre_intake]
+            pre_amount = f"{sum(s.commission_amount for s in students_in_intake):.2f}"
+    all_intakes = sorted({s.intake for s in Student.query.with_entities(Student.intake).all() if s.intake})
+    return render_template("invoice_new.html",
+        universities=universities, all_intakes=all_intakes,
+        pre_uni=pre_uni, pre_intake=pre_intake, pre_amount=pre_amount,
+    )
+
+
+@app.route("/invoices/<int:inv_id>")
+@login_required
+def invoice_detail(inv_id):
+    inv = db.get_or_404(CommissionInvoice, inv_id)
+    intake_students = []
+    if inv.intake:
+        intake_students = [s for s in inv.university.active_students if (s.intake or "") == inv.intake]
+    else:
+        intake_students = inv.university.active_students
+    return render_template("invoice_detail.html", invoice=inv, students=intake_students)
+
+
+@app.route("/invoices/<int:inv_id>/status", methods=["POST"])
+@login_required
+def invoice_status(inv_id):
+    inv = db.get_or_404(CommissionInvoice, inv_id)
+    new_status = request.form.get("status", inv.status)
+    inv.status = new_status
+    if new_status == "Paid":
+        inv.paid_date = date.today()
+    log_activity("Updated", "Invoice", f"{inv.invoice_number} marked {new_status}")
+    db.session.commit()
+    flash(f"Invoice marked as {new_status}.", "success")
+    return redirect(url_for("invoice_detail", inv_id=inv_id))
+
+
+@app.route("/invoices/<int:inv_id>/delete", methods=["POST"])
+@login_required
+def invoice_delete(inv_id):
+    inv = db.get_or_404(CommissionInvoice, inv_id)
+    num = inv.invoice_number
+    log_activity("Deleted", "Invoice", f"Deleted {num}")
+    db.session.delete(inv)
+    db.session.commit()
+    flash(f"Invoice {num} deleted.", "success")
+    return redirect(url_for("invoices"))
+
+
+# ── EXCEL EXPORTS ─────────────────────────────────────────────────────────────
+
+@app.route("/students/export/excel")
+@login_required
+def students_export_excel():
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        flash("openpyxl not installed — run: pip install openpyxl", "error")
+        return redirect(url_for("students"))
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Students"
+
+    headers = ["Name", "Nationality", "University", "Programme", "Intake",
+               "Status", "Tuition", "Scholarship", "Commissionable", "Rate %",
+               "Commission", "Collected", "Outstanding", "Currency", "Notes"]
+    hdr_fill = PatternFill("solid", fgColor="0D9488")
+    hdr_font = Font(bold=True, color="FFFFFF")
+    for ci, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=ci, value=h)
+        cell.fill = hdr_fill
+        cell.font = hdr_font
+        cell.alignment = Alignment(horizontal="center")
+
+    stus = Student.query.order_by(Student.name).all()
+    for ri, s in enumerate(stus, 2):
+        ws.cell(ri, 1, s.name)
+        ws.cell(ri, 2, s.nationality or "")
+        ws.cell(ri, 3, s.university.name if s.university else "")
+        ws.cell(ri, 4, s.program or "")
+        ws.cell(ri, 5, s.intake or "")
+        ws.cell(ri, 6, s.status or "")
+        ws.cell(ri, 7, s.tuition_amount or 0)
+        ws.cell(ri, 8, s.scholarship_amount or 0)
+        ws.cell(ri, 9, s.commissionable_amount)
+        ws.cell(ri, 10, round(s.effective_rate, 2))
+        ws.cell(ri, 11, round(s.commission_amount, 2))
+        ws.cell(ri, 12, s.amount_collected or 0)
+        ws.cell(ri, 13, round(s.outstanding, 2))
+        ws.cell(ri, 14, s.currency or "")
+        ws.cell(ri, 15, s.notes or "")
+
+    for col in ws.columns:
+        ws.column_dimensions[col[0].column_letter].width = max(
+            len(str(col[0].value or "")), max((len(str(c.value or "")) for c in col[1:]), default=0)
+        ) + 4
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return Response(buf.read(), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": "attachment;filename=students.xlsx"})
+
+
+@app.route("/invoices/export/excel")
+@login_required
+def invoices_export_excel():
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        flash("openpyxl not installed.", "error")
+        return redirect(url_for("invoices"))
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Invoices"
+    headers = ["Invoice #", "University", "Intake", "Status", "Amount", "Currency",
+               "Issued", "Due", "Paid", "Notes"]
+    hdr_fill = PatternFill("solid", fgColor="0D9488")
+    hdr_font = Font(bold=True, color="FFFFFF")
+    for ci, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=ci, value=h)
+        cell.fill = hdr_fill
+        cell.font = hdr_font
+
+    for ri, inv in enumerate(CommissionInvoice.query.order_by(CommissionInvoice.created_at.desc()).all(), 2):
+        ws.cell(ri, 1, inv.invoice_number)
+        ws.cell(ri, 2, inv.university.name if inv.university else "")
+        ws.cell(ri, 3, inv.intake or "All")
+        ws.cell(ri, 4, inv.status)
+        ws.cell(ri, 5, inv.amount or 0)
+        ws.cell(ri, 6, inv.currency)
+        ws.cell(ri, 7, str(inv.issued_date) if inv.issued_date else "")
+        ws.cell(ri, 8, str(inv.due_date) if inv.due_date else "")
+        ws.cell(ri, 9, str(inv.paid_date) if inv.paid_date else "")
+        ws.cell(ri, 10, inv.notes or "")
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return Response(buf.read(), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": "attachment;filename=invoices.xlsx"})
+
+
+# ── GLOBAL SEARCH ─────────────────────────────────────────────────────────────
+
+@app.route("/search")
+@login_required
+def search():
+    q = request.args.get("q", "").strip()
+    results = {"students": [], "universities": [], "documents": []}
+    if q and len(q) >= 2:
+        results["students"] = Student.query.filter(
+            Student.name.ilike(f"%{q}%") | Student.email.ilike(f"%{q}%") |
+            Student.program.ilike(f"%{q}%") | Student.nationality.ilike(f"%{q}%")
+        ).limit(20).all()
+        results["universities"] = University.query.filter(
+            University.name.ilike(f"%{q}%") | University.country.ilike(f"%{q}%") |
+            University.city.ilike(f"%{q}%")
+        ).limit(10).all()
+        results["documents"] = CommissionDocument.query.filter(
+            CommissionDocument.original_filename.ilike(f"%{q}%") |
+            CommissionDocument.description.ilike(f"%{q}%")
+        ).limit(10).all()
+    if request.headers.get("Accept", "").startswith("application/json") or request.args.get("json"):
+        return jsonify({
+            "students": [{"id": s.id, "name": s.name, "university": s.university.name if s.university else "", "status": s.status} for s in results["students"]],
+            "universities": [{"id": u.id, "name": u.name, "country": u.country or ""} for u in results["universities"]],
+            "documents": [{"id": d.id, "name": d.original_filename, "university": d.university.name if d.university else ""} for d in results["documents"]],
+        })
+    return render_template("search_results.html", q=q, results=results)
+
+
+# ── REPORTS ───────────────────────────────────────────────────────────────────
+
+@app.route("/reports")
+@login_required
+def reports():
+    all_students = Student.query.filter(Student.status != "Cancelled").all()
+    universities = University.query.order_by(University.name).all()
+
+    # Group by intake
+    from collections import defaultdict
+    intake_data = defaultdict(lambda: {"expected": 0, "collected": 0, "students": 0})
+    for s in all_students:
+        key = s.intake or "No Intake"
+        intake_data[key]["expected"]  += s.commission_amount
+        intake_data[key]["collected"] += s.amount_collected
+        intake_data[key]["students"]  += 1
+    intake_rows = sorted(
+        [{"intake": k, **v, "outstanding": v["expected"] - v["collected"]} for k, v in intake_data.items()],
+        key=lambda x: x["intake"], reverse=True
+    )
+
+    # Group by university
+    uni_data = []
+    for u in universities:
+        active = u.active_students
+        if not active:
+            continue
+        expected  = sum(s.commission_amount for s in active)
+        collected = sum(s.amount_collected  for s in active)
+        uni_data.append({
+            "university": u,
+            "expected": expected,
+            "collected": collected,
+            "outstanding": expected - collected,
+            "students": len(active),
+            "collection_pct": round(collected / expected * 100 if expected else 0, 1),
+        })
+    uni_data.sort(key=lambda x: x["expected"], reverse=True)
+
+    # Invoice summary
+    inv_summary = {
+        "draft":   sum(i.amount for i in CommissionInvoice.query.filter_by(status="Draft").all()),
+        "sent":    sum(i.amount for i in CommissionInvoice.query.filter_by(status="Sent").all()),
+        "paid":    sum(i.amount for i in CommissionInvoice.query.filter_by(status="Paid").all()),
+        "overdue": sum(i.amount for i in CommissionInvoice.query.filter_by(status="Overdue").all()),
+    }
+
+    total_expected  = sum(s.commission_amount for s in all_students)
+    total_collected = sum(s.amount_collected  for s in all_students)
+
+    return render_template("reports.html",
+        intake_rows=intake_rows,
+        uni_data=uni_data,
+        inv_summary=inv_summary,
+        total_expected=total_expected,
+        total_collected=total_collected,
+        total_outstanding=total_expected - total_collected,
+        collection_pct=round(total_collected / total_expected * 100 if total_expected else 0, 1),
+    )
+
+
+# ── NOTIFICATIONS API ─────────────────────────────────────────────────────────
+
+@app.route("/api/notifications")
+@login_required
+def api_notifications():
+    today = date.today()
+    notes = []
+
+    # Contract expiry within 60 days
+    for u in University.query.all():
+        ce = u.contract_end or ""
+        for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%m/%d/%Y", "%d-%m-%Y"):
+            try:
+                ce_date = datetime.strptime(ce.strip(), fmt).date()
+                days_left = (ce_date - today).days
+                if 0 <= days_left <= 60:
+                    notes.append({"type": "expiry", "message": f"{u.name} contract expires in {days_left} day{'s' if days_left != 1 else ''}", "url": url_for("university_detail", uid=u.id)})
+                break
+            except ValueError:
+                continue
+
+    # Overdue invoices
+    overdue = CommissionInvoice.query.filter(
+        CommissionInvoice.status.in_(["Sent", "Overdue"]),
+        CommissionInvoice.due_date < today,
+    ).all()
+    for inv in overdue:
+        notes.append({"type": "overdue", "message": f"Invoice {inv.invoice_number} overdue — {inv.university.name}", "url": url_for("invoice_detail", inv_id=inv.id)})
+
+    # Draft invoices (remind to send)
+    draft_count = CommissionInvoice.query.filter_by(status="Draft").count()
+    if draft_count:
+        notes.append({"type": "draft", "message": f"{draft_count} invoice{'s' if draft_count != 1 else ''} still in Draft", "url": url_for("invoices")})
+
+    return jsonify({"count": len(notes), "notifications": notes})
 
 
 if __name__ == "__main__":

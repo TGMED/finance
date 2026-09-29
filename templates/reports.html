@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Reports — TGM Finance{% endblock %}
+{% block page_title %}Reports{% endblock %}
+{% block page_sub %}Revenue, commission, and collection overview{% endblock %}
+
+{% block content %}
+<!-- Summary cards -->
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px;">
+  <div class="stat-card">
+    <div class="stat-label">TOTAL EXPECTED</div>
+    <div class="stat-value">£{{ "{:,.2f}".format(total_expected) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">COLLECTED</div>
+    <div class="stat-value" style="color:#22c55e;">£{{ "{:,.2f}".format(total_collected) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">OUTSTANDING</div>
+    <div class="stat-value" style="color:#f59e0b;">£{{ "{:,.2f}".format(total_outstanding) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">COLLECTION RATE</div>
+    <div class="stat-value">{{ collection_pct }}%</div>
+    <div style="height:4px;background:var(--border);border-radius:2px;margin-top:8px;">
+      <div style="height:4px;background:#0d9488;border-radius:2px;width:{{ collection_pct }}%;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Invoice summary -->
+<div class="panel" style="margin-bottom:24px;">
+  <div class="panel-head">
+    <span class="panel-title">Invoice Summary</span>
+    <a href="{{ url_for('invoices') }}" class="btn ghost sm">View All</a>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;padding:16px 0;">
+    {% for label, val, color in [
+      ('Draft', inv_summary.draft, '#94a3b8'),
+      ('Sent', inv_summary.sent, '#3b82f6'),
+      ('Overdue', inv_summary.overdue, '#ef4444'),
+      ('Paid', inv_summary.paid, '#22c55e'),
+    ] %}
+    <div style="text-align:center;padding:12px;border-right:1px solid var(--border);">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:6px;">{{ label }}</div>
+      <div style="font-size:20px;font-weight:700;color:{{ color }};">£{{ "{:,.0f}".format(val) }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Commission by Intake -->
+<div class="panel" style="margin-bottom:24px;">
+  <div class="panel-head">
+    <span class="panel-title">Commission by Intake Period</span>
+    <a href="{{ url_for('students_export_excel') }}" class="btn ghost sm">&#8595; Export Excel</a>
+  </div>
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Intake</th>
+          <th class="num">Students</th>
+          <th class="num">Expected</th>
+          <th class="num">Collected</th>
+          <th class="num">Outstanding</th>
+          <th>Collection</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in intake_rows %}
+        {% set pct = (row.collected / row.expected * 100) if row.expected else 0 %}
+        <tr>
+          <td style="font-weight:500;">{{ row.intake }}</td>
+          <td class="num">{{ row.students }}</td>
+          <td class="num">£{{ "{:,.2f}".format(row.expected) }}</td>
+          <td class="num" style="color:#22c55e;">£{{ "{:,.2f}".format(row.collected) }}</td>
+          <td class="num" style="color:{% if row.outstanding > 0 %}#f59e0b{% else %}var(--muted){% endif %};">£{{ "{:,.2f}".format(row.outstanding) }}</td>
+          <td style="min-width:120px;">
+            <div style="height:6px;background:var(--border);border-radius:3px;">
+              <div style="height:6px;background:#0d9488;border-radius:3px;width:{{ [pct,100]|min }}%;"></div>
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin-top:3px;">{{ "{:.0f}".format(pct) }}%</div>
+          </td>
+          <td>
+            <a href="{{ url_for('invoices') }}?intake={{ row.intake | urlencode }}" class="btn ghost sm">Invoice</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Commission by University -->
+<div class="panel" style="margin-bottom:24px;">
+  <div class="panel-head">
+    <span class="panel-title">Commission by University</span>
+  </div>
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>University</th>
+          <th class="num">Students</th>
+          <th class="num">Expected</th>
+          <th class="num">Collected</th>
+          <th class="num">Outstanding</th>
+          <th>Collection %</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in uni_data %}
+        <tr>
+          <td><a href="{{ url_for('university_detail', uid=row.university.id) }}" style="font-weight:500;">{{ row.university.name }}</a></td>
+          <td class="num">{{ row.students }}</td>
+          <td class="num">£{{ "{:,.2f}".format(row.expected) }}</td>
+          <td class="num" style="color:#22c55e;">£{{ "{:,.2f}".format(row.collected) }}</td>
+          <td class="num" style="color:{% if row.outstanding > 0 %}#f59e0b{% else %}var(--muted){% endif %};">£{{ "{:,.2f}".format(row.outstanding) }}</td>
+          <td>
+            <div style="height:6px;background:var(--border);border-radius:3px;">
+              <div style="height:6px;background:#0d9488;border-radius:3px;width:{{ [row.collection_pct,100]|min }}%;"></div>
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin-top:3px;">{{ row.collection_pct }}%</div>
+          </td>
+          <td>
+            <a href="{{ url_for('invoice_new') }}?university_id={{ row.university.id }}" class="btn ghost sm">+ Invoice</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

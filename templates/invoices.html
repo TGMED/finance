@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Invoices — TGM Finance{% endblock %}
+{% block page_title %}Invoices{% endblock %}
+{% block page_sub %}Commission invoices per university{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Commission Invoices</h1>
+    <p>{{ invoices | length }} invoice{{ 's' if invoices | length != 1 }}</p>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <a href="{{ url_for('invoices_export_excel') }}" class="btn ghost">&#8595; Export Excel</a>
+    <a href="{{ url_for('invoice_new') }}" class="btn teal">+ New Invoice</a>
+  </div>
+</div>
+
+<!-- Summary cards -->
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px;">
+  <div class="info-card" style="padding:16px 20px;">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">PENDING / SENT</div>
+    <div style="font-size:22px;font-weight:700;color:var(--text);">£{{ "{:,.2f}".format(total_due) }}</div>
+  </div>
+  <div class="info-card" style="padding:16px 20px;">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">OVERDUE</div>
+    <div style="font-size:22px;font-weight:700;color:#ef4444;">£{{ "{:,.2f}".format(total_overdue) }}</div>
+  </div>
+  <div class="info-card" style="padding:16px 20px;">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">PAID</div>
+    <div style="font-size:22px;font-weight:700;color:#22c55e;">£{{ "{:,.2f}".format(total_paid) }}</div>
+  </div>
+</div>
+
+<!-- Filters -->
+<form method="GET" class="toolbar" style="margin-bottom:20px;">
+  <select name="status" class="filter-sel">
+    <option value="">All Statuses</option>
+    {% for s in ['Draft','Sent','Paid','Overdue'] %}
+      <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <select name="university" class="filter-sel">
+    <option value="">All Universities</option>
+    {% for u in universities %}
+      <option value="{{ u.id }}" {% if uni_filter == u.id|string %}selected{% endif %}>{{ u.name }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn ghost">Filter</button>
+  {% if status_filter or uni_filter %}<a href="{{ url_for('invoices') }}" class="btn ghost">Clear</a>{% endif %}
+</form>
+
+{% if invoices %}
+<div class="panel">
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Invoice #</th>
+          <th>University</th>
+          <th>Intake</th>
+          <th>Status</th>
+          <th class="num">Amount</th>
+          <th>Issued</th>
+          <th>Due</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for inv in invoices %}
+        <tr>
+          <td><a href="{{ url_for('invoice_detail', inv_id=inv.id) }}" style="color:var(--teal);font-weight:600;">{{ inv.invoice_number }}</a></td>
+          <td><a href="{{ url_for('university_detail', uid=inv.university_id) }}">{{ inv.university.name }}</a></td>
+          <td>{{ inv.intake or 'All intakes' }}</td>
+          <td>
+            {% set s = inv.status_display %}
+            <span class="badge {% if s == 'Paid' %}b-yes{% elif s == 'Overdue' %}b-no{% elif s == 'Sent' %}cs-Active{% else %}cs-Unknown{% endif %}">{{ s }}</span>
+          </td>
+          <td class="num">{{ inv.currency }} {{ "{:,.2f}".format(inv.amount) }}</td>
+          <td class="muted">{{ inv.issued_date.strftime('%d %b %Y') if inv.issued_date }}</td>
+          <td class="muted" style="{% if inv.is_overdue %}color:#ef4444;{% endif %}">{{ inv.due_date.strftime('%d %b %Y') if inv.due_date else '—' }}</td>
+          <td>
+            <div style="display:flex;gap:6px;">
+              <a href="{{ url_for('invoice_detail', inv_id=inv.id) }}" class="btn ghost sm">View</a>
+              {% if inv.status != 'Paid' %}
+              <form method="POST" action="{{ url_for('invoice_status', inv_id=inv.id) }}" style="display:inline;">
+                {% if inv.status == 'Draft' %}
+                  <input type="hidden" name="status" value="Sent">
+                  <button type="submit" class="btn teal sm">Mark Sent</button>
+                {% elif inv.status in ('Sent','Overdue') %}
+                  <input type="hidden" name="status" value="Paid">
+                  <button type="submit" class="btn teal sm">Mark Paid</button>
+                {% endif %}
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="panel">
+  <div class="empty" style="padding:40px 0;text-align:center;">
+    <div style="font-size:40px;margin-bottom:12px;">🧾</div>
+    <p style="color:var(--muted);font-size:14px;">No invoices yet.<br>
+      <a href="{{ url_for('invoice_new') }}" style="color:var(--teal);">Create your first invoice</a>
+    </p>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

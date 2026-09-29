@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Search: {{ q }} — TGM Finance{% endblock %}
+{% block page_title %}Search Results{% endblock %}
+{% block page_sub %}Results for "{{ q }}"{% endblock %}
+
+{% block content %}
+{% set total = results.students|length + results.universities|length + results.documents|length %}
+
+{% if not q %}
+<div class="panel" style="padding:40px;text-align:center;color:var(--muted);">
+  Use the search bar above to find students, universities, or documents.
+</div>
+{% elif total == 0 %}
+<div class="panel" style="padding:40px;text-align:center;color:var(--muted);">
+  No results found for "<strong>{{ q }}</strong>".
+</div>
+{% else %}
+
+{% if results.students %}
+<div class="panel" style="margin-bottom:20px;">
+  <div class="panel-head"><span class="panel-title">Students ({{ results.students|length }})</span></div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Name</th><th>University</th><th>Programme</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {% for s in results.students %}
+        <tr>
+          <td style="font-weight:500;">{{ s.name }}</td>
+          <td>{{ s.university.name if s.university else '—' }}</td>
+          <td class="muted">{{ s.program or '—' }}</td>
+          <td><span class="badge cs-{{ s.status or 'Unknown' }}">{{ s.status or '—' }}</span></td>
+          <td><a href="{{ url_for('student_detail', sid=s.id) }}" class="btn ghost sm">View</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if results.universities %}
+<div class="panel" style="margin-bottom:20px;">
+  <div class="panel-head"><span class="panel-title">Universities ({{ results.universities|length }})</span></div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Name</th><th>Country</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {% for u in results.universities %}
+        <tr>
+          <td style="font-weight:500;">{{ u.name }}</td>
+          <td class="muted">{{ u.country or '—' }}</td>
+          <td><span class="badge cs-{{ u.contract_status or 'Unknown' }}">{{ u.contract_status or '—' }}</span></td>
+          <td><a href="{{ url_for('university_detail', uid=u.id) }}" class="btn ghost sm">View</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if results.documents %}
+<div class="panel" style="margin-bottom:20px;">
+  <div class="panel-head"><span class="panel-title">Documents ({{ results.documents|length }})</span></div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Document</th><th>University</th><th>Date</th><th></th></tr></thead>
+      <tbody>
+        {% for doc in results.documents %}
+        <tr>
+          <td>
+            <span class="doc-ext ext-{{ doc.file_ext }}">{{ doc.file_ext }}</span>
+            <span style="margin-left:8px;">{{ doc.original_filename }}</span>
+          </td>
+          <td><a href="{{ url_for('university_detail', uid=doc.university_id) }}">{{ doc.university.name }}</a></td>
+          <td class="muted">{{ doc.uploaded_at.strftime('%d %b %Y') }}</td>
+          <td>
+            <a href="{{ url_for('legal_download', doc_id=doc.id) }}" class="btn ghost sm">&#8595;</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

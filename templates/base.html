@@ -60,6 +60,27 @@
       Students
     </a>
 
+    <a href="{{ url_for('invoices') }}" class="nav-link {% if 'invoice' in request.endpoint %}active{% endif %}">
+      <span class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="3" width="20" height="14" rx="2"/>
+          <path d="M8 21h8M12 17v4"/>
+          <path d="M7 7h4M7 11h8"/>
+        </svg>
+      </span>
+      Invoices
+    </a>
+
+    <a href="{{ url_for('reports') }}" class="nav-link {% if request.endpoint == 'reports' %}active{% endif %}">
+      <span class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
+          <line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/>
+        </svg>
+      </span>
+      Reports
+    </a>
+
     <div class="nav-section">Compliance</div>
 
     <a href="{{ url_for('legal') }}" class="nav-link {% if request.endpoint == 'legal' %}active{% endif %}">
@@ -121,6 +142,32 @@
       <div class="topbar-sub">{% block page_sub %}{% endblock %}</div>
     </div>
     <div class="topbar-right">
+      <!-- Global search -->
+      <div style="position:relative;" id="gs-wrap">
+        <form action="{{ url_for('search') }}" method="GET" style="display:flex;align-items:center;gap:0;">
+          <input id="gs-input" name="q" type="text" placeholder="Search…" autocomplete="off"
+                 style="padding:7px 12px;border:1px solid var(--border);border-radius:8px 0 0 8px;font-size:13px;background:var(--input-bg,#fff);color:var(--text);width:180px;outline:none;"
+                 oninput="gsLive(this.value)">
+          <button type="submit" style="padding:7px 12px;border:1px solid var(--border);border-left:none;border-radius:0 8px 8px 0;background:var(--teal,#0d9488);color:#fff;cursor:pointer;font-size:13px;">&#128269;</button>
+        </form>
+        <div id="gs-drop" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--card);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:999;max-height:320px;overflow-y:auto;min-width:320px;"></div>
+      </div>
+
+      <!-- Notifications bell -->
+      <div style="position:relative;" id="notif-wrap">
+        <button id="notif-btn" onclick="toggleNotif()" style="background:none;border:none;cursor:pointer;padding:6px;position:relative;color:var(--muted);" title="Notifications">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+          <span id="notif-badge" style="display:none;position:absolute;top:2px;right:2px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;border-radius:50%;width:16px;height:16px;line-height:16px;text-align:center;"></span>
+        </button>
+        <div id="notif-drop" style="display:none;position:absolute;top:calc(100% + 6px);right:0;width:320px;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.14);z-index:999;">
+          <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;color:var(--text);">Notifications</div>
+          <div id="notif-list" style="max-height:300px;overflow-y:auto;padding:8px 0;font-size:13px;color:var(--muted);">Loading…</div>
+        </div>
+      </div>
+
       <div class="user-chip">
         <div class="user-avatar">{{ session.get('user_name', '?')[0].upper() }}</div>
         <div class="user-info">
@@ -154,6 +201,87 @@
   }
   hamburger && hamburger.addEventListener('click', toggleSidebar);
   backdrop  && backdrop.addEventListener('click', toggleSidebar);
+
+  // Global search live dropdown
+  var _gsTimer;
+  function gsLive(q) {
+    clearTimeout(_gsTimer);
+    var drop = document.getElementById('gs-drop');
+    if (!q || q.length < 2) { drop.style.display = 'none'; return; }
+    _gsTimer = setTimeout(function() {
+      fetch('/search?q=' + encodeURIComponent(q) + '&json=1')
+        .then(function(r){ return r.json(); })
+        .then(function(d) {
+          var html = '';
+          var total = (d.students||[]).length + (d.universities||[]).length + (d.documents||[]).length;
+          if (!total) { html = '<div style="padding:12px 16px;color:var(--muted);">No results</div>'; }
+          if ((d.students||[]).length) {
+            html += '<div style="padding:6px 12px 2px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;">Students</div>';
+            d.students.forEach(function(s) {
+              html += '<a href="/students/' + s.id + '" style="display:block;padding:8px 16px;color:var(--text);text-decoration:none;border-radius:6px;" onmouseover="this.style.background=\'var(--hover)\'" onmouseout="this.style.background=\'\'"><strong>' + s.name + '</strong> <span style="color:var(--muted);font-size:12px;">' + s.university + '</span></a>';
+            });
+          }
+          if ((d.universities||[]).length) {
+            html += '<div style="padding:6px 12px 2px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;">Universities</div>';
+            d.universities.forEach(function(u) {
+              html += '<a href="/universities/' + u.id + '" style="display:block;padding:8px 16px;color:var(--text);text-decoration:none;" onmouseover="this.style.background=\'var(--hover)\'" onmouseout="this.style.background=\'\'"><strong>' + u.name + '</strong> <span style="color:var(--muted);font-size:12px;">' + (u.country||'') + '</span></a>';
+            });
+          }
+          if ((d.documents||[]).length) {
+            html += '<div style="padding:6px 12px 2px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;">Documents</div>';
+            d.documents.forEach(function(doc) {
+              html += '<a href="/legal" style="display:block;padding:8px 16px;color:var(--text);text-decoration:none;" onmouseover="this.style.background=\'var(--hover)\'" onmouseout="this.style.background=\'\'">&#128196; ' + doc.name + ' <span style="color:var(--muted);font-size:12px;">' + doc.university + '</span></a>';
+            });
+          }
+          drop.innerHTML = html;
+          drop.style.display = 'block';
+        });
+    }, 250);
+  }
+  document.addEventListener('click', function(e) {
+    var wrap = document.getElementById('gs-wrap');
+    if (wrap && !wrap.contains(e.target)) document.getElementById('gs-drop').style.display = 'none';
+  });
+
+  // Notifications
+  var _notifLoaded = false;
+  function toggleNotif() {
+    var drop = document.getElementById('notif-drop');
+    var isOpen = drop.style.display !== 'none';
+    drop.style.display = isOpen ? 'none' : 'block';
+    if (!isOpen && !_notifLoaded) loadNotifs();
+  }
+  function loadNotifs() {
+    _notifLoaded = true;
+    fetch('/api/notifications')
+      .then(function(r){ return r.json(); })
+      .then(function(d) {
+        var badge = document.getElementById('notif-badge');
+        if (d.count > 0) { badge.textContent = d.count > 9 ? '9+' : d.count; badge.style.display = 'block'; }
+        var list = document.getElementById('notif-list');
+        if (!d.notifications.length) { list.innerHTML = '<div style="padding:12px 16px;color:var(--muted);">No new notifications</div>'; return; }
+        var icons = { expiry: '⚠️', overdue: '🔴', draft: '📋' };
+        list.innerHTML = d.notifications.map(function(n) {
+          return '<a href="' + n.url + '" style="display:flex;align-items:flex-start;gap:10px;padding:10px 16px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--border);" onmouseover="this.style.background=\'var(--hover)\'" onmouseout="this.style.background=\'\'">' +
+            '<span style="font-size:15px;flex-shrink:0;">' + (icons[n.type]||'🔔') + '</span>' +
+            '<span style="font-size:12.5px;line-height:1.4;">' + n.message + '</span></a>';
+        }).join('');
+      });
+  }
+  document.addEventListener('click', function(e) {
+    var wrap = document.getElementById('notif-wrap');
+    if (wrap && !wrap.contains(e.target)) document.getElementById('notif-drop').style.display = 'none';
+  });
+  // Load notification count on page load
+  setTimeout(function() {
+    fetch('/api/notifications').then(function(r){ return r.json(); }).then(function(d) {
+      if (d.count > 0) {
+        var badge = document.getElementById('notif-badge');
+        badge.textContent = d.count > 9 ? '9+' : d.count;
+        badge.style.display = 'block';
+      }
+    }).catch(function(){});
+  }, 800);
 </script>
 {% block scripts %}{% endblock %}
 </body>

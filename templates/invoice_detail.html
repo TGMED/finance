@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}{{ invoice.invoice_number }} — TGM Finance{% endblock %}
+{% block page_title %}{{ invoice.invoice_number }}{% endblock %}
+{% block page_sub %}{{ invoice.university.name }} — {{ invoice.status_display }}{% endblock %}
+
+{% block back_button %}<a href="{{ url_for('invoices') }}" style="font-size:13px;color:var(--muted);text-decoration:none;">← Invoices</a>{% endblock %}
+
+{% block content %}
+<div style="display:flex;gap:10px;margin-bottom:20px;justify-content:flex-end;">
+  <button onclick="window.print()" class="btn ghost">&#128438; Print / Save PDF</button>
+  {% if invoice.status != 'Paid' %}
+  <form method="POST" action="{{ url_for('invoice_status', inv_id=invoice.id) }}" style="display:inline;">
+    {% if invoice.status == 'Draft' %}
+      <input type="hidden" name="status" value="Sent">
+      <button type="submit" class="btn teal">Mark as Sent</button>
+    {% elif invoice.status in ('Sent','Overdue') %}
+      <input type="hidden" name="status" value="Paid">
+      <button type="submit" class="btn teal">Mark as Paid ✓</button>
+    {% endif %}
+  </form>
+  {% endif %}
+  <form method="POST" action="{{ url_for('invoice_delete', inv_id=invoice.id) }}"
+        onsubmit="return confirm('Delete this invoice?')" style="display:inline;">
+    <button type="submit" class="btn danger sm">Delete</button>
+  </form>
+</div>
+
+<!-- Printable invoice -->
+<div id="invoice-print" style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:40px;max-width:800px;margin:0 auto;color:#1e293b;">
+
+  <!-- Header -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;">
+    <div>
+      <div style="font-size:24px;font-weight:800;color:#0d9488;">TGM Education</div>
+      <div style="font-size:13px;color:#64748b;margin-top:4px;">Commission Invoice</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:20px;font-weight:700;color:#1e293b;">{{ invoice.invoice_number }}</div>
+      <div style="font-size:13px;color:#64748b;margin-top:4px;">
+        {% set s = invoice.status_display %}
+        <span style="display:inline-block;padding:3px 10px;border-radius:20px;font-weight:600;font-size:12px;
+          background:{% if s=='Paid' %}#dcfce7{% elif s=='Overdue' %}#fee2e2{% elif s=='Sent' %}#dbeafe{% else %}#f1f5f9{% endif %};
+          color:{% if s=='Paid' %}#166534{% elif s=='Overdue' %}#991b1b{% elif s=='Sent' %}#1e40af{% else %}#475569{% endif %};">{{ s }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Parties -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-bottom:32px;">
+    <div>
+      <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">From</div>
+      <div style="font-weight:600;font-size:14px;">TGM Education / Marchnata Enterprises</div>
+      <div style="font-size:13px;color:#64748b;margin-top:4px;">tgmdigitalbusiness@gmail.com</div>
+    </div>
+    <div>
+      <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">To</div>
+      <div style="font-weight:600;font-size:14px;">{{ invoice.university.name }}</div>
+      {% if invoice.university.country %}<div style="font-size:13px;color:#64748b;">{{ invoice.university.country }}</div>{% endif %}
+      {% for rep in invoice.university.reps %}
+        {% if rep.rep_type == 'international' %}
+          <div style="font-size:13px;color:#64748b;">{{ rep.name }}{% if rep.email %} · {{ rep.emails[0] }}{% endif %}</div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Invoice details -->
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:32px;padding:16px 20px;background:#f8fafc;border-radius:10px;">
+    <div>
+      <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Issued</div>
+      <div style="font-size:14px;font-weight:600;">{{ invoice.issued_date.strftime('%d %b %Y') if invoice.issued_date else '—' }}</div>
+    </div>
+    <div>
+      <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Due</div>
+      <div style="font-size:14px;font-weight:600;color:{% if invoice.is_overdue %}#ef4444{% else %}#1e293b{% endif %};">
+        {{ invoice.due_date.strftime('%d %b %Y') if invoice.due_date else '—' }}
+      </div>
+    </div>
+    <div>
+      <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Intake</div>
+      <div style="font-size:14px;font-weight:600;">{{ invoice.intake or 'All intakes' }}</div>
+    </div>
+  </div>
+
+  <!-- Student breakdown table -->
+  {% if students %}
+  <table style="width:100%;border-collapse:collapse;margin-bottom:24px;font-size:13px;">
+    <thead>
+      <tr style="background:#f1f5f9;">
+        <th style="padding:10px 12px;text-align:left;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">Student</th>
+        <th style="padding:10px 12px;text-align:left;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">Programme</th>
+        <th style="padding:10px 12px;text-align:right;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">Tuition</th>
+        <th style="padding:10px 12px;text-align:right;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">Rate</th>
+        <th style="padding:10px 12px;text-align:right;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">Commission</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in students %}
+      <tr style="border-bottom:1px solid #f1f5f9;">
+        <td style="padding:10px 12px;">{{ s.name }}</td>
+        <td style="padding:10px 12px;color:#64748b;">{{ s.program or '—' }}</td>
+        <td style="padding:10px 12px;text-align:right;">{{ invoice.currency }} {{ "{:,.2f}".format(s.tuition_amount or 0) }}</td>
+        <td style="padding:10px 12px;text-align:right;color:#64748b;">{{ "{:.1f}".format(s.effective_rate) }}%</td>
+        <td style="padding:10px 12px;text-align:right;font-weight:600;">{{ invoice.currency }} {{ "{:,.2f}".format(s.commission_amount) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <!-- Total -->
+  <div style="display:flex;justify-content:flex-end;margin-bottom:32px;">
+    <div style="background:#0d9488;color:#fff;padding:16px 24px;border-radius:10px;min-width:200px;text-align:right;">
+      <div style="font-size:12px;opacity:.8;margin-bottom:4px;">TOTAL COMMISSION DUE</div>
+      <div style="font-size:26px;font-weight:800;">{{ invoice.currency }} {{ "{:,.2f}".format(invoice.amount) }}</div>
+    </div>
+  </div>
+
+  {% if invoice.notes %}
+  <div style="padding:16px;background:#f8fafc;border-radius:8px;font-size:13px;color:#64748b;margin-bottom:24px;">
+    <strong>Notes:</strong> {{ invoice.notes }}
+  </div>
+  {% endif %}
+
+  <div style="border-top:1px solid #e2e8f0;padding-top:16px;font-size:12px;color:#94a3b8;text-align:center;">
+    TGM Education · Commission Tracker · Generated {{ invoice.created_at.strftime('%d %b %Y') if invoice.created_at }}
+  </div>
+</div>
+
+<style>
+@media print {
+  .sidebar, .topbar, .flash-wrap, .page-header + div:first-child, nav, .mobile-bar { display: none !important; }
+  .main { margin-left: 0 !important; padding: 0 !important; }
+  .content { padding: 0 !important; }
+  #invoice-print { border: none !important; padding: 20px !important; }
+  button, a.btn { display: none !important; }
+}
+</style>
+{% endblock %}

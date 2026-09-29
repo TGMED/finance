@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}New Invoice — TGM Finance{% endblock %}
+{% block page_title %}New Invoice{% endblock %}
+{% block page_sub %}Generate a commission invoice{% endblock %}
+
+{% block content %}
+<div style="max-width:620px;margin:0 auto;">
+<div class="panel" style="padding:28px;">
+  <form method="POST" action="{{ url_for('invoice_new') }}">
+    <div class="form-group">
+      <label>University *</label>
+      <select name="university_id" required onchange="loadIntakes(this.value)">
+        <option value="">— Select university —</option>
+        {% for u in universities %}
+          <option value="{{ u.id }}" {% if pre_uni == u.id|string %}selected{% endif %}>{{ u.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Intake Period</label>
+      <select name="intake" id="intake-sel">
+        <option value="">All intakes</option>
+        {% for i in all_intakes %}
+          <option value="{{ i }}" {% if pre_intake == i %}selected{% endif %}>{{ i }}</option>
+        {% endfor %}
+      </select>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px;">Leave blank to invoice all active students at this university</div>
+    </div>
+    <div class="form-group">
+      <label>Amount (leave blank to auto-calculate from students)</label>
+      <input type="number" name="amount" step="0.01" min="0" id="amount-input"
+             value="{{ pre_amount }}" placeholder="Auto-calculated if blank">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div class="form-group">
+        <label>Currency</label>
+        <select name="currency">
+          {% for c in ['GBP','USD','EUR','CAD','AUD','NGN'] %}
+            <option value="{{ c }}">{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select name="status">
+          <option value="Draft">Draft</option>
+          <option value="Sent">Sent</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Due Date</label>
+      <input type="date" name="due_date">
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea name="notes" rows="3" placeholder="e.g. September 2025 intake commission"></textarea>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+      <a href="{{ url_for('invoices') }}" class="btn ghost">Cancel</a>
+      <button type="submit" class="btn teal">Generate Invoice</button>
+    </div>
+  </form>
+</div>
+</div>
+{% endblock %}
