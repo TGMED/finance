@@ -25,115 +25,150 @@
   </form>
 </div>
 
-<!-- Printable invoice -->
-<div id="invoice-print" style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:40px;max-width:800px;margin:0 auto;color:#1e293b;">
+<!-- ── Printable Invoice ───────────────────────────────────────────────── -->
+<div id="invoice-print" style="background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:44px 52px;max-width:820px;margin:0 auto;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:12.5px;line-height:1.4;">
 
-  <!-- Header -->
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;">
-    <div>
-      <div style="font-size:24px;font-weight:800;color:#0d9488;">TGM Education</div>
-      <div style="font-size:13px;color:#64748b;margin-top:4px;">Commission Invoice</div>
-    </div>
+  <!-- Title + Logo row -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
+    <div style="font-size:26px;font-weight:900;color:#111;letter-spacing:-0.5px;">Tax Invoice</div>
     <div style="text-align:right;">
-      <div style="font-size:20px;font-weight:700;color:#1e293b;">{{ invoice.invoice_number }}</div>
-      <div style="font-size:13px;color:#64748b;margin-top:4px;">
-        {% set s = invoice.status_display %}
-        <span style="display:inline-block;padding:3px 10px;border-radius:20px;font-weight:600;font-size:12px;
-          background:{% if s=='Paid' %}#dcfce7{% elif s=='Overdue' %}#fee2e2{% elif s=='Sent' %}#dbeafe{% else %}#f1f5f9{% endif %};
-          color:{% if s=='Paid' %}#166534{% elif s=='Overdue' %}#991b1b{% elif s=='Sent' %}#1e40af{% else %}#475569{% endif %};">{{ s }}</span>
-      </div>
+      <img src="{{ url_for('static', filename='logo.png') }}" alt="TG Marchnata" style="height:60px;width:auto;object-fit:contain;">
     </div>
   </div>
 
-  <!-- Parties -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-bottom:32px;">
-    <div>
-      <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">From</div>
-      <div style="font-weight:600;font-size:14px;">TGM Education / Marchnata Enterprises</div>
-      <div style="font-size:13px;color:#64748b;margin-top:4px;">tgmdigitalbusiness@gmail.com</div>
+  <!-- Company name -->
+  <div style="font-weight:700;font-size:13px;margin-bottom:12px;">TG Marchnata Enterprises</div>
+
+  <!-- Address + Right meta -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;border-top:1.5px solid #999;border-bottom:1.5px solid #999;padding:10px 0;margin-bottom:18px;gap:32px;">
+    <div style="font-size:12px;color:#374151;">
+      <div style="font-weight:600;margin-bottom:6px;">VAT No:</div>
+      <div>1, Harold Shodipo Crescent, GRA, Ikeja</div>
+      <div>1, Harold Shodipo Crescent, GRA, Ikeja</div>
     </div>
-    <div>
-      <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">To</div>
-      <div style="font-weight:600;font-size:14px;">{{ invoice.university.name }}</div>
-      {% if invoice.university.country %}<div style="font-size:13px;color:#64748b;">{{ invoice.university.country }}</div>{% endif %}
-      {% for rep in invoice.university.reps %}
-        {% if rep.rep_type == 'international' %}
-          <div style="font-size:13px;color:#64748b;">{{ rep.name }}{% if rep.email %} · {{ rep.emails[0] }}{% endif %}</div>
-        {% endif %}
-      {% endfor %}
+    <div style="text-align:right;font-size:12px;white-space:nowrap;">
+      <table style="border-collapse:collapse;margin-left:auto;">
+        <tr><td style="padding:1.5px 16px 1.5px 0;font-weight:600;">Number:</td><td style="font-weight:700;text-align:right;">{{ invoice.invoice_number }}</td></tr>
+        <tr><td style="padding:1.5px 16px 1.5px 0;font-weight:600;">Date:</td><td style="text-align:right;">{{ invoice.issued_date.strftime('%d/%m/%Y') if invoice.issued_date else '—' }}</td></tr>
+        <tr><td style="padding:1.5px 16px 1.5px 0;font-weight:600;">Page:</td><td style="text-align:right;">1/1</td></tr>
+        <tr><td style="padding:1.5px 16px 1.5px 0;font-weight:600;">Reference:</td><td style="text-align:right;"></td></tr>
+        <tr><td style="padding:1.5px 16px 1.5px 0;font-weight:600;">Sales Rep:</td><td style="text-align:right;"></td></tr>
+        <tr><td style="padding:1.5px 16px 1.5px 0;font-weight:600;">VAT No:</td><td style="text-align:right;"></td></tr>
+        <tr><td style="padding:1.5px 16px 1.5px 0;font-weight:600;">Due Date</td><td style="text-align:right;">{{ invoice.due_date.strftime('%d/%m/%Y') if invoice.due_date else '—' }}</td></tr>
+        <tr><td style="padding:1.5px 16px 1.5px 0;font-weight:600;">Overall Discount %:</td><td style="text-align:right;">0.00%</td></tr>
+      </table>
     </div>
   </div>
 
-  <!-- Invoice details -->
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:32px;padding:16px 20px;background:#f8fafc;border-radius:10px;">
-    <div>
-      <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Issued</div>
-      <div style="font-size:14px;font-weight:600;">{{ invoice.issued_date.strftime('%d %b %Y') if invoice.issued_date else '—' }}</div>
-    </div>
-    <div>
-      <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Due</div>
-      <div style="font-size:14px;font-weight:600;color:{% if invoice.is_overdue %}#ef4444{% else %}#1e293b{% endif %};">
-        {{ invoice.due_date.strftime('%d %b %Y') if invoice.due_date else '—' }}
-      </div>
-    </div>
-    <div>
-      <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Intake</div>
-      <div style="font-size:14px;font-weight:600;">{{ invoice.intake or 'All intakes' }}</div>
-    </div>
+  <!-- Bill-to / Customer -->
+  <div style="margin-bottom:28px;">
+    <div style="font-weight:800;font-size:13px;text-transform:uppercase;letter-spacing:.3px;">{{ invoice.university.name }}</div>
+    <div style="font-size:12px;color:#555;margin-top:3px;">Customer VAT No:</div>
   </div>
 
-  <!-- Student breakdown table -->
-  {% if students %}
-  <table style="width:100%;border-collapse:collapse;margin-bottom:24px;font-size:13px;">
+  <!-- Line items table -->
+  <table style="width:100%;border-collapse:collapse;margin-bottom:28px;font-size:12px;">
     <thead>
-      <tr style="background:#f1f5f9;">
-        <th style="padding:10px 12px;text-align:left;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">Student</th>
-        <th style="padding:10px 12px;text-align:left;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">Programme</th>
-        <th style="padding:10px 12px;text-align:right;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">Tuition</th>
-        <th style="padding:10px 12px;text-align:right;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">Rate</th>
-        <th style="padding:10px 12px;text-align:right;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">Commission</th>
+      <tr style="border-top:1.5px solid #999;border-bottom:1.5px solid #999;">
+        <th style="padding:8px 10px 8px 0;text-align:left;font-weight:700;color:#111;">Description</th>
+        <th style="padding:8px 10px;text-align:center;font-weight:700;color:#111;width:80px;">Quantity</th>
+        <th style="padding:8px 10px;text-align:right;font-weight:700;color:#111;width:110px;">Excl. Price</th>
+        <th style="padding:8px 0 8px 10px;text-align:right;font-weight:700;color:#111;width:110px;">Total</th>
       </tr>
     </thead>
     <tbody>
-      {% for s in students %}
-      <tr style="border-bottom:1px solid #f1f5f9;">
-        <td style="padding:10px 12px;">{{ s.name }}</td>
-        <td style="padding:10px 12px;color:#64748b;">{{ s.program or '—' }}</td>
-        <td style="padding:10px 12px;text-align:right;">{{ invoice.currency }} {{ "{:,.2f}".format(s.tuition_amount or 0) }}</td>
-        <td style="padding:10px 12px;text-align:right;color:#64748b;">{{ "{:.1f}".format(s.effective_rate) }}%</td>
-        <td style="padding:10px 12px;text-align:right;font-weight:600;">{{ invoice.currency }} {{ "{:,.2f}".format(s.commission_amount) }}</td>
-      </tr>
-      {% endfor %}
+      {% if students %}
+        {% for s in students %}
+        {% set comm = s.commission_amount_override if s.commission_amount_override else (s.commissionable_amount * s.effective_rate / 100) %}
+        <tr style="border-bottom:1px solid #e5e7eb;vertical-align:top;">
+          <td style="padding:10px 10px 10px 0;">
+            <div style="font-weight:600;margin-bottom:5px;">Commission Payment</div>
+            <div style="color:#374151;line-height:1.85;font-size:11.5px;">
+              STUDENT NAME: {{ s.name | upper }}<br>
+              STUDENT ID: {{ s.apphub_ref.replace('APPHUB:','') if s.apphub_ref else s.id }}<br>
+              COURSE: {{ (s.program or '—') | upper }}<br>
+              TUITION: {{ "{:,.0f}".format(s.tuition_amount or 0) }}<br>
+              RATE: {{ "{:.0f}".format(s.effective_rate) }}%<br>
+              COMMISSION: {{ "{:,.2f}".format(comm) }}
+            </div>
+          </td>
+          <td style="padding:10px;text-align:center;"></td>
+          <td style="padding:10px;text-align:right;">{{ invoice.currency }} {{ "{:,.2f}".format(comm) }}</td>
+          <td style="padding:10px 0 10px 10px;text-align:right;">{{ invoice.currency }} {{ "{:,.2f}".format(comm) }}</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr style="border-bottom:1px solid #e5e7eb;vertical-align:top;">
+          <td style="padding:10px 10px 10px 0;">
+            <div style="font-weight:600;">Commission Payment</div>
+          </td>
+          <td style="padding:10px;text-align:center;"></td>
+          <td style="padding:10px;text-align:right;">{{ invoice.currency }} {{ "{:,.2f}".format(invoice.amount) }}</td>
+          <td style="padding:10px 0 10px 10px;text-align:right;">{{ invoice.currency }} {{ "{:,.2f}".format(invoice.amount) }}</td>
+        </tr>
+      {% endif %}
     </tbody>
   </table>
-  {% endif %}
 
-  <!-- Total -->
-  <div style="display:flex;justify-content:flex-end;margin-bottom:32px;">
-    <div style="background:#0d9488;color:#fff;padding:16px 24px;border-radius:10px;min-width:200px;text-align:right;">
-      <div style="font-size:12px;opacity:.8;margin-bottom:4px;">TOTAL COMMISSION DUE</div>
-      <div style="font-size:26px;font-weight:800;">{{ invoice.currency }} {{ "{:,.2f}".format(invoice.amount) }}</div>
+  <!-- Footer: Bank details + Totals side by side -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;border-top:1px solid #ccc;padding-top:14px;gap:24px;font-size:11.5px;">
+
+    <!-- Bank / payment details -->
+    <div style="flex:1;line-height:2;color:#374151;">
+      <div>Correspondent Bank: <strong>CitiBank, London</strong></div>
+      <div>Swift Code: <strong>CITIGB2L</strong></div>
+      <div>Sort Code: <strong>185008</strong></div>
+      <div>For Credit Of: <strong>Guaranty Trust Bank plc, Lagos Nigeria</strong></div>
+      <div>Beneficiary's Bank Swift Code: <strong>GTBINGLA</strong></div>
+      <div>GTBank's Account No. with CitiBank, London IBAN Number: <strong>GB72 CITI 1850 0850 0808 3157 95</strong></div>
+      <div>For Final Credit Of: ................................ <strong>TG MARCHNATA ENTERPRISES TG MA</strong></div>
+      <div>Beneficiary's A/C Number: ................................ <strong>0013872738</strong></div>
+      <div>Any Other Detail: ..................................................<strong>{{ invoice.intake or '' }} COMMISSION {{ invoice.university.name | upper }}</strong></div>
+    </div>
+
+    <!-- Totals box -->
+    <div style="min-width:260px;flex-shrink:0;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid #ccc;">
+        <tr style="border-bottom:1px solid #ccc;">
+          <td style="padding:6px 14px;font-weight:600;color:#374151;">Total Discount:</td>
+          <td style="padding:6px 14px;text-align:right;">{{ invoice.currency }} 0.00</td>
+        </tr>
+        <tr style="border-bottom:1px solid #ccc;">
+          <td style="padding:6px 14px;font-weight:600;color:#374151;">Total Exclusive:</td>
+          <td style="padding:6px 14px;text-align:right;">{{ invoice.currency }} {{ "{:,.2f}".format(invoice.amount) }}</td>
+        </tr>
+        <tr style="border-bottom:1px solid #ccc;">
+          <td style="padding:6px 14px;font-weight:600;color:#374151;">Total VAT:</td>
+          <td style="padding:6px 14px;text-align:right;">{{ invoice.currency }} 0.00</td>
+        </tr>
+        <tr style="border-bottom:1px solid #ccc;">
+          <td style="padding:6px 14px;font-weight:600;color:#374151;">Sub Total:</td>
+          <td style="padding:6px 14px;text-align:right;">{{ invoice.currency }} {{ "{:,.2f}".format(invoice.amount) }}</td>
+        </tr>
+        <tr style="background:#f9fafb;">
+          <td style="padding:9px 14px;font-weight:800;font-size:13px;">Total:</td>
+          <td style="padding:9px 14px;text-align:right;font-weight:800;font-size:13px;">{{ invoice.currency }} {{ "{:,.2f}".format(invoice.amount) }}</td>
+        </tr>
+      </table>
     </div>
   </div>
 
-  {% if invoice.notes %}
-  <div style="padding:16px;background:#f8fafc;border-radius:8px;font-size:13px;color:#64748b;margin-bottom:24px;">
-    <strong>Notes:</strong> {{ invoice.notes }}
-  </div>
-  {% endif %}
-
-  <div style="border-top:1px solid #e2e8f0;padding-top:16px;font-size:12px;color:#94a3b8;text-align:center;">
-    TGM Education · Commission Tracker · Generated {{ invoice.created_at.strftime('%d %b %Y') if invoice.created_at }}
-  </div>
-</div>
+</div><!-- /invoice-print -->
 
 <style>
 @media print {
-  .sidebar, .topbar, .flash-wrap, .page-header + div:first-child, nav, .mobile-bar { display: none !important; }
+  .sidebar, .topbar, .flash-wrap, .page-header, nav, .mobile-bar,
+  .btn, button, a.btn { display: none !important; }
   .main { margin-left: 0 !important; padding: 0 !important; }
   .content { padding: 0 !important; }
-  #invoice-print { border: none !important; padding: 20px !important; }
-  button, a.btn { display: none !important; }
+  body { background: #fff !important; }
+  #invoice-print {
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 20px 28px !important;
+    max-width: 100% !important;
+    box-shadow: none !important;
+  }
 }
 </style>
 {% endblock %}

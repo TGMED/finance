@@ -40,3 +40,4 @@ Thumbs.db
 # Playwright / screenshots
 _shot/
 *.png
+!static/logo.png
