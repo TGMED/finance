@@ -264,7 +264,13 @@
     var drop = document.getElementById('notif-drop');
     var isOpen = drop.style.display !== 'none';
     drop.style.display = isOpen ? 'none' : 'block';
-    if (!isOpen && !_notifLoaded) loadNotifs();
+    if (!isOpen) {
+      // Clear badge immediately when panel opens
+      var badge = document.getElementById('notif-badge');
+      badge.style.display = 'none';
+      badge.textContent = '';
+      if (!_notifLoaded) loadNotifs();
+    }
   }
   function loadNotifs() {
     _notifLoaded = true;
@@ -285,7 +291,10 @@
   }
   document.addEventListener('click', function(e) {
     var wrap = document.getElementById('notif-wrap');
-    if (wrap && !wrap.contains(e.target)) document.getElementById('notif-drop').style.display = 'none';
+    if (wrap && !wrap.contains(e.target)) {
+      document.getElementById('notif-drop').style.display = 'none';
+      _notifLoaded = false; // allow fresh reload next open
+    }
   });
   // Load notification count on page load
   setTimeout(function() {

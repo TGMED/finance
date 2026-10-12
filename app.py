@@ -725,7 +725,7 @@ def dashboard():
             try:
                 ce_date = datetime.strptime(ce.strip(), fmt).date()
                 days_left = (ce_date - today).days
-                if 0 <= days_left <= 90:
+                if 0 <= days_left <= 30:
                     expiry_alerts.append({"university": u, "contract_end": ce_date, "days_left": days_left})
                 break
             except ValueError:
@@ -2208,7 +2208,7 @@ def api_notifications():
             try:
                 ce_date = datetime.strptime(ce.strip(), fmt).date()
                 days_left = (ce_date - today).days
-                if 0 <= days_left <= 60:
+                if 0 <= days_left <= 30:
                     notes.append({"type": "expiry", "message": f"{u.name} contract expires in {days_left} day{'s' if days_left != 1 else ''}", "url": url_for("university_detail", uid=u.id)})
                 break
             except ValueError:
