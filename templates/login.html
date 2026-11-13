@@ -52,12 +52,72 @@
       border-radius: 9px; padding: 10px 14px;
       font-size: 13.5px; margin-bottom: 16px;
     }
+    /* ── Festive snowflakes ── */
+    .snowflake {
+      position: fixed;
+      top: -24px;
+      color: #fff;
+      pointer-events: none;
+      user-select: none;
+      z-index: 10;
+      animation: snowFall linear infinite;
+      text-shadow: 0 0 4px rgba(180,230,255,.7);
+    }
+    @keyframes snowFall {
+      0%   { transform: translateY(0)    translateX(0)    rotate(0deg);   opacity: 1; }
+      20%  { transform: translateY(20vh) translateX(14px) rotate(72deg);  }
+      40%  { transform: translateY(40vh) translateX(-10px) rotate(144deg); }
+      60%  { transform: translateY(60vh) translateX(16px) rotate(216deg); }
+      80%  { transform: translateY(80vh) translateX(-8px) rotate(288deg); }
+      100% { transform: translateY(108vh) translateX(4px) rotate(360deg); opacity: 0; }
+    }
+    /* ── Christmas hat on badge ── */
+    .login-badge-wrap {
+      position: relative;
+      display: inline-flex;
+      flex-shrink: 0;
+    }
+    .xmas-hat {
+      position: absolute;
+      top: -24px;
+      left: 0px;
+      width: 46px;
+      height: 38px;
+      pointer-events: none;
+      transform: rotate(-12deg);
+      transform-origin: bottom center;
+      z-index: 2;
+    }
+    /* ── Festive footer note ── */
+    .festive-note {
+      text-align: center;
+      font-size: 12px;
+      color: #8faab8;
+      margin-top: 20px;
+      letter-spacing: .3px;
+    }
+    .festive-note span { color: #e8514a; }
   </style>
 </head>
 <body>
+  <!-- Snowflakes injected by JS -->
   <div class="login-card">
     <div class="login-logo">
-      <div class="login-badge">T</div>
+      <div class="login-badge-wrap">
+        <!-- Santa hat SVG -->
+        <svg class="xmas-hat" viewBox="0 0 42 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- red cone -->
+          <polygon points="21,1 40,30 2,30" fill="#C41E3A"/>
+          <!-- white brim -->
+          <rect x="0" y="27" width="42" height="9" rx="4.5" fill="#ffffff"/>
+          <!-- hat band stripe -->
+          <rect x="2" y="27" width="38" height="3" rx="1.5" fill="#e8e8e8"/>
+          <!-- pompom -->
+          <circle cx="21" cy="4" r="5" fill="#ffffff"/>
+          <circle cx="21" cy="4" r="3.5" fill="#f0f0f0"/>
+        </svg>
+        <div class="login-badge">T</div>
+      </div>
       <div class="login-brand">
         <strong>TGM Finance</strong>
         <span>Commission Tracker</span>
@@ -81,6 +141,26 @@
       </div>
       <button type="submit" class="login-btn">Sign in</button>
     </form>
+    <div class="festive-note">❄ Wishing you a joyful festive season <span>🎄</span></div>
   </div>
+
+  <script>
+    (function () {
+      var chars = ['❄', '❅', '❆', '✦', '·'];
+      var count = 48;
+      for (var i = 0; i < count; i++) {
+        var el = document.createElement('span');
+        el.className = 'snowflake';
+        el.textContent = chars[Math.floor(Math.random() * chars.length)];
+        var size = 8 + Math.random() * 18;
+        el.style.left = (Math.random() * 100) + 'vw';
+        el.style.fontSize = size + 'px';
+        el.style.opacity = (0.3 + Math.random() * 0.65).toFixed(2);
+        el.style.animationDuration = (5 + Math.random() * 9) + 's';
+        el.style.animationDelay = (-Math.random() * 14) + 's';
+        document.body.appendChild(el);
+      }
+    })();
+  </script>
 </body>
 </html>
