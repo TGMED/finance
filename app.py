@@ -284,6 +284,120 @@ class CommissionInvoice(db.Model):
         return self.status
 
 
+# ── ACCOUNTING MODULE MODELS ──────────────────────────────────────────────────
+
+class AccInvoice(db.Model):
+    __tablename__ = "acc_invoices"
+    id               = db.Column(db.Integer, primary_key=True)
+    invoice_number   = db.Column(db.String(40), unique=True, nullable=False)
+    status           = db.Column(db.String(20), default="Draft")  # Draft/Sent/Paid/Overdue/Void
+    # Header fields
+    invoice_date     = db.Column(db.Date, default=date.today)
+    due_date         = db.Column(db.Date)
+    reference        = db.Column(db.String(200))
+    sales_rep        = db.Column(db.String(200))
+    our_vat_no       = db.Column(db.String(80))
+    overall_discount = db.Column(db.Float, default=0.0)
+    currency         = db.Column(db.String(10), default="GBP")
+    # Customer
+    customer_name    = db.Column(db.String(300))
+    customer_address = db.Column(db.Text)
+    customer_vat_no  = db.Column(db.String(80))
+    # Bank details (pre-filled, fully editable per invoice)
+    corr_bank        = db.Column(db.String(200), default="CitiBank, London")
+    corr_swift       = db.Column(db.String(40),  default="CITIGB2L")
+    corr_sort        = db.Column(db.String(40),  default="185008")
+    bene_bank        = db.Column(db.String(200), default="Guaranty Trust Bank plc, Lagos Nigeria")
+    bene_swift       = db.Column(db.String(40),  default="GTBINGLA")
+    bene_iban        = db.Column(db.String(100), default="GB72 CITI 1850 0850 0808 3157 95")
+    bene_acct_name   = db.Column(db.String(200), default="TG MARCHNATA ENTERPRISES")
+    bene_acct_no     = db.Column(db.String(80),  default="0013872738")
+    any_other_detail = db.Column(db.String(500))
+    # Meta
+    notes            = db.Column(db.Text)
+    paid_date        = db.Column(db.Date)
+    created_by       = db.Column(db.String(120))
+    created_at       = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at       = db.Column(db.DateTime, default=datetime.utcnow)
+    lines            = db.relationship("AccInvoiceLine", backref="invoice",
+                           cascade="all, delete-orphan",
+                           order_by="AccInvoiceLine.position")
+
+    @property
+    def subtotal(self):
+        return sum(l.line_total for l in self.lines)
+
+    @property
+    def discount_amount(self):
+        return round(self.subtotal * (self.overall_discount or 0) / 100, 2)
+
+    @property
+    def total_exclusive(self):
+        return round(self.subtotal - self.discount_amount, 2)
+
+    @property
+    def total_vat(self):
+        return round(sum(l.vat_amount for l in self.lines), 2)
+
+    @property
+    def total(self):
+        return round(self.total_exclusive + self.total_vat, 2)
+
+    @property
+    def is_overdue(self):
+        return self.status not in ("Paid", "Void") and self.due_date and self.due_date < date.today()
+
+    @property
+    def status_display(self):
+        if self.is_overdue and self.status == "Sent":
+            return "Overdue"
+        return self.status
+
+
+class AccBankProfile(db.Model):
+    __tablename__ = "acc_bank_profiles"
+    id             = db.Column(db.Integer, primary_key=True)
+    name           = db.Column(db.String(100), nullable=False)
+    corr_bank      = db.Column(db.String(200), default="")
+    corr_swift     = db.Column(db.String(40),  default="")
+    corr_sort      = db.Column(db.String(40),  default="")
+    bene_bank      = db.Column(db.String(200), default="")
+    bene_swift     = db.Column(db.String(40),  default="")
+    bene_iban      = db.Column(db.String(100), default="")
+    bene_acct_name = db.Column(db.String(200), default="")
+    bene_acct_no   = db.Column(db.String(80),  default="")
+    is_default     = db.Column(db.Boolean, default=False)
+    created_at     = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AccInvoiceLine(db.Model):
+    __tablename__ = "acc_invoice_lines"
+    id           = db.Column(db.Integer, primary_key=True)
+    invoice_id   = db.Column(db.Integer, db.ForeignKey("acc_invoices.id"), nullable=False)
+    position     = db.Column(db.Integer, default=0)
+    description  = db.Column(db.Text, default="")
+    quantity     = db.Column(db.Float, default=1.0)
+    unit_price   = db.Column(db.Float, default=0.0)
+    discount_pct = db.Column(db.Float, default=0.0)
+    vat_rate     = db.Column(db.Float, default=0.0)
+
+    @property
+    def line_subtotal(self):
+        return round((self.quantity or 1) * (self.unit_price or 0), 2)
+
+    @property
+    def line_discount(self):
+        return round(self.line_subtotal * (self.discount_pct or 0) / 100, 2)
+
+    @property
+    def line_total(self):
+        return round(self.line_subtotal - self.line_discount, 2)
+
+    @property
+    def vat_amount(self):
+        return round(self.line_total * (self.vat_rate or 0) / 100, 2)
+
+
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 
 def log_activity(action, entity, summary):
@@ -530,6 +644,24 @@ def next_invoice_number():
     last = CommissionInvoice.query.order_by(CommissionInvoice.id.desc()).first()
     n = (last.id + 1) if last else 1
     return f"TGM-{n:04d}"
+
+def next_acc_invoice_number():
+    nums = []
+    ci = CommissionInvoice.query.order_by(CommissionInvoice.id.desc()).first()
+    if ci and ci.invoice_number:
+        try: nums.append(int(ci.invoice_number.lstrip("TINVGM-")))
+        except: pass
+    ai = AccInvoice.query.order_by(AccInvoice.id.desc()).first()
+    if ai and ai.invoice_number.startswith("INV"):
+        try: nums.append(int(ai.invoice_number[3:]))
+        except: pass
+    # also check raw CommissionInvoice numbers like INV0001670
+    ci2 = db.session.execute(db.text("SELECT invoice_number FROM commission_invoices ORDER BY id DESC LIMIT 1")).fetchone()
+    if ci2 and ci2[0] and ci2[0].startswith("INV"):
+        try: nums.append(int(ci2[0][3:]))
+        except: pass
+    n = (max(nums) + 1) if nums else 1670
+    return f"INV{n:07d}"
 
 def _eval_rule(rules, programme, year, tuition, student_count):
     t = rules.get("type", "")
@@ -2003,6 +2135,345 @@ def invoice_delete(inv_id):
     db.session.commit()
     flash(f"Invoice {num} deleted.", "success")
     return redirect(url_for("invoices"))
+
+
+# ── ACCOUNTING MODULE ─────────────────────────────────────────────────────────
+
+@app.route("/accounting")
+@login_required
+def accounting():
+    status_f = request.args.get("status", "")
+    q        = request.args.get("q", "").strip()
+    query    = AccInvoice.query
+    if status_f:
+        query = query.filter(AccInvoice.status == status_f)
+    if q:
+        query = query.filter(AccInvoice.customer_name.ilike(f"%{q}%") |
+                             AccInvoice.invoice_number.ilike(f"%{q}%") |
+                             AccInvoice.reference.ilike(f"%{q}%"))
+    all_inv = query.order_by(AccInvoice.created_at.desc()).all()
+    totals  = {
+        "draft":   sum(i.total for i in all_inv if i.status == "Draft"),
+        "sent":    sum(i.total for i in all_inv if i.status == "Sent"),
+        "paid":    sum(i.total for i in all_inv if i.status == "Paid"),
+        "overdue": sum(i.total for i in all_inv if i.is_overdue),
+    }
+    bank_profiles = AccBankProfile.query.order_by(AccBankProfile.name).all()
+    return render_template("accounting.html", invoices=all_inv, totals=totals,
+                           status_f=status_f, q=q, bank_profiles=bank_profiles)
+
+
+@app.route("/accounting/invoice/new", methods=["GET", "POST"])
+@login_required
+def acc_invoice_new():
+    if request.method == "POST":
+        inv = AccInvoice(
+            invoice_number   = request.form.get("invoice_number") or next_acc_invoice_number(),
+            status           = "Draft",
+            invoice_date     = datetime.strptime(request.form["invoice_date"], "%Y-%m-%d").date() if request.form.get("invoice_date") else date.today(),
+            due_date         = datetime.strptime(request.form["due_date"], "%Y-%m-%d").date() if request.form.get("due_date") else None,
+            reference        = request.form.get("reference",""),
+            sales_rep        = request.form.get("sales_rep",""),
+            our_vat_no       = request.form.get("our_vat_no",""),
+            overall_discount = float(request.form.get("overall_discount") or 0),
+            currency         = request.form.get("currency","GBP"),
+            customer_name    = request.form.get("customer_name",""),
+            customer_address = request.form.get("customer_address",""),
+            customer_vat_no  = request.form.get("customer_vat_no",""),
+            corr_bank        = request.form.get("corr_bank",""),
+            corr_swift       = request.form.get("corr_swift",""),
+            corr_sort        = request.form.get("corr_sort",""),
+            bene_bank        = request.form.get("bene_bank",""),
+            bene_swift       = request.form.get("bene_swift",""),
+            bene_iban        = request.form.get("bene_iban",""),
+            bene_acct_name   = request.form.get("bene_acct_name",""),
+            bene_acct_no     = request.form.get("bene_acct_no",""),
+            any_other_detail = request.form.get("any_other_detail",""),
+            notes            = request.form.get("notes",""),
+            created_by       = session.get("user_name",""),
+        )
+        db.session.add(inv)
+        db.session.flush()
+        _save_acc_lines(inv, request.form)
+        db.session.commit()
+        log_activity("Created", "Acc Invoice", f"{inv.invoice_number} for {inv.customer_name}")
+        flash(f"Invoice {inv.invoice_number} created.", "success")
+        return redirect(url_for("acc_invoice_view", inv_id=inv.id))
+    return render_template("accounting_invoice_edit.html",
+                           inv=None,
+                           next_number=next_acc_invoice_number(),
+                           today=date.today())
+
+
+@app.route("/accounting/invoice/<int:inv_id>")
+@login_required
+def acc_invoice_view(inv_id):
+    inv = db.get_or_404(AccInvoice, inv_id)
+    return render_template("accounting_invoice_view.html", inv=inv)
+
+
+@app.route("/accounting/invoice/<int:inv_id>/edit", methods=["GET", "POST"])
+@login_required
+def acc_invoice_edit(inv_id):
+    inv = db.get_or_404(AccInvoice, inv_id)
+    if request.method == "POST":
+        inv.invoice_number   = request.form.get("invoice_number") or inv.invoice_number
+        inv.invoice_date     = datetime.strptime(request.form["invoice_date"], "%Y-%m-%d").date() if request.form.get("invoice_date") else inv.invoice_date
+        inv.due_date         = datetime.strptime(request.form["due_date"], "%Y-%m-%d").date() if request.form.get("due_date") else None
+        inv.reference        = request.form.get("reference","")
+        inv.sales_rep        = request.form.get("sales_rep","")
+        inv.our_vat_no       = request.form.get("our_vat_no","")
+        inv.overall_discount = float(request.form.get("overall_discount") or 0)
+        inv.currency         = request.form.get("currency","GBP")
+        inv.customer_name    = request.form.get("customer_name","")
+        inv.customer_address = request.form.get("customer_address","")
+        inv.customer_vat_no  = request.form.get("customer_vat_no","")
+        inv.corr_bank        = request.form.get("corr_bank","")
+        inv.corr_swift       = request.form.get("corr_swift","")
+        inv.corr_sort        = request.form.get("corr_sort","")
+        inv.bene_bank        = request.form.get("bene_bank","")
+        inv.bene_swift       = request.form.get("bene_swift","")
+        inv.bene_iban        = request.form.get("bene_iban","")
+        inv.bene_acct_name   = request.form.get("bene_acct_name","")
+        inv.bene_acct_no     = request.form.get("bene_acct_no","")
+        inv.any_other_detail = request.form.get("any_other_detail","")
+        inv.notes            = request.form.get("notes","")
+        inv.updated_at       = datetime.utcnow()
+        # rebuild lines
+        for l in list(inv.lines): db.session.delete(l)
+        db.session.flush()
+        _save_acc_lines(inv, request.form)
+        db.session.commit()
+        log_activity("Updated", "Acc Invoice", f"{inv.invoice_number}")
+        flash("Invoice updated.", "success")
+        return redirect(url_for("acc_invoice_view", inv_id=inv.id))
+    return render_template("accounting_invoice_edit.html", inv=inv,
+                           next_number=inv.invoice_number,
+                           today=date.today())
+
+
+@app.route("/accounting/invoice/<int:inv_id>/status", methods=["POST"])
+@login_required
+def acc_invoice_status(inv_id):
+    inv = db.get_or_404(AccInvoice, inv_id)
+    new_status = request.form.get("status")
+    if new_status in ("Draft","Sent","Paid","Void"):
+        inv.status = new_status
+        if new_status == "Paid" and not inv.paid_date:
+            inv.paid_date = date.today()
+        db.session.commit()
+        log_activity("Updated", "Acc Invoice", f"{inv.invoice_number} → {new_status}")
+        flash(f"Invoice marked as {new_status}.", "success")
+    return redirect(url_for("acc_invoice_view", inv_id=inv_id))
+
+
+@app.route("/accounting/invoice/<int:inv_id>/delete", methods=["POST"])
+@login_required
+def acc_invoice_delete(inv_id):
+    inv = db.get_or_404(AccInvoice, inv_id)
+    num = inv.invoice_number
+    db.session.delete(inv)
+    db.session.commit()
+    log_activity("Deleted", "Acc Invoice", num)
+    flash(f"Invoice {num} deleted.", "success")
+    return redirect(url_for("accounting"))
+
+
+# ── Bank profiles ─────────────────────────────────────────────────────────────
+
+@app.route("/accounting/banks/json")
+@login_required
+def acc_banks_json():
+    profiles = AccBankProfile.query.order_by(AccBankProfile.name).all()
+    return jsonify([{
+        "id": p.id, "name": p.name, "is_default": p.is_default,
+        "corr_bank": p.corr_bank, "corr_swift": p.corr_swift, "corr_sort": p.corr_sort,
+        "bene_bank": p.bene_bank, "bene_swift": p.bene_swift, "bene_iban": p.bene_iban,
+        "bene_acct_name": p.bene_acct_name, "bene_acct_no": p.bene_acct_no,
+    } for p in profiles])
+
+
+@app.route("/accounting/banks/save", methods=["POST"])
+@login_required
+def acc_bank_save():
+    bid  = request.form.get("profile_id")
+    name = request.form.get("name","").strip()
+    if not name:
+        flash("Profile name is required.", "error")
+        return redirect(url_for("accounting") + "#banks")
+    if bid:
+        p = db.get_or_404(AccBankProfile, int(bid))
+    else:
+        p = AccBankProfile()
+        db.session.add(p)
+    p.name           = name
+    p.corr_bank      = request.form.get("corr_bank","")
+    p.corr_swift     = request.form.get("corr_swift","")
+    p.corr_sort      = request.form.get("corr_sort","")
+    p.bene_bank      = request.form.get("bene_bank","")
+    p.bene_swift     = request.form.get("bene_swift","")
+    p.bene_iban      = request.form.get("bene_iban","")
+    p.bene_acct_name = request.form.get("bene_acct_name","")
+    p.bene_acct_no   = request.form.get("bene_acct_no","")
+    if request.form.get("is_default"):
+        AccBankProfile.query.update({"is_default": False})
+        p.is_default = True
+    db.session.commit()
+    flash(f"Bank profile '{p.name}' saved.", "success")
+    return redirect(url_for("accounting") + "#banks")
+
+
+@app.route("/accounting/banks/<int:bid>/delete", methods=["POST"])
+@login_required
+def acc_bank_delete(bid):
+    p = db.get_or_404(AccBankProfile, bid)
+    db.session.delete(p)
+    db.session.commit()
+    flash("Bank profile deleted.", "success")
+    return redirect(url_for("accounting") + "#banks")
+
+
+# ── Invoice preview ────────────────────────────────────────────────────────────
+
+@app.route("/accounting/invoice/preview", methods=["POST"])
+@login_required
+def acc_invoice_preview():
+    form = request.form
+    # Build a temporary (unsaved) invoice object for rendering
+    inv = AccInvoice(
+        invoice_number   = form.get("invoice_number") or "PREVIEW",
+        status           = "Draft",
+        invoice_date     = datetime.strptime(form["invoice_date"], "%Y-%m-%d").date() if form.get("invoice_date") else date.today(),
+        due_date         = datetime.strptime(form["due_date"], "%Y-%m-%d").date() if form.get("due_date") else None,
+        reference        = form.get("reference",""),
+        sales_rep        = form.get("sales_rep",""),
+        our_vat_no       = form.get("our_vat_no",""),
+        overall_discount = float(form.get("overall_discount") or 0),
+        currency         = form.get("currency","GBP"),
+        customer_name    = form.get("customer_name",""),
+        customer_address = form.get("customer_address",""),
+        customer_vat_no  = form.get("customer_vat_no",""),
+        corr_bank        = form.get("corr_bank",""),
+        corr_swift       = form.get("corr_swift",""),
+        corr_sort        = form.get("corr_sort",""),
+        bene_bank        = form.get("bene_bank",""),
+        bene_swift       = form.get("bene_swift",""),
+        bene_iban        = form.get("bene_iban",""),
+        bene_acct_name   = form.get("bene_acct_name",""),
+        bene_acct_no     = form.get("bene_acct_no",""),
+        any_other_detail = form.get("any_other_detail",""),
+        notes            = form.get("notes",""),
+    )
+    # Build lines (not persisted)
+    lines = []
+    descs  = form.getlist("line_description[]")
+    qtys   = form.getlist("line_quantity[]")
+    prices = form.getlist("line_unit_price[]")
+    discs  = form.getlist("line_discount_pct[]")
+    vats   = form.getlist("line_vat_rate[]")
+    for i, desc in enumerate(descs):
+        l = AccInvoiceLine(
+            invoice_id   = 0,
+            position     = i,
+            description  = desc,
+            quantity     = float(qtys[i])  if i < len(qtys)   and qtys[i]   else 1.0,
+            unit_price   = float(prices[i]) if i < len(prices) and prices[i] else 0.0,
+            discount_pct = float(discs[i]) if i < len(discs)  and discs[i]  else 0.0,
+            vat_rate     = float(vats[i])  if i < len(vats)   and vats[i]   else 0.0,
+        )
+        lines.append(l)
+    inv.lines = lines
+    # Save form data to session so the preview page can re-submit for real save
+    session["inv_preview_data"] = dict(form.lists())
+    session["inv_preview_id"]   = form.get("_edit_id","")
+    return render_template("accounting_invoice_view.html", inv=inv, preview=True)
+
+
+@app.route("/accounting/invoice/preview/confirm", methods=["POST"])
+@login_required
+def acc_invoice_preview_confirm():
+    data   = session.pop("inv_preview_data", {})
+    edit_id = session.pop("inv_preview_id", "")
+    from werkzeug.datastructures import ImmutableMultiDict
+    form = ImmutableMultiDict([(k, v) for k, vs in data.items() for v in vs])
+    if edit_id:
+        inv = db.get_or_404(AccInvoice, int(edit_id))
+        inv.invoice_number   = form.get("invoice_number") or inv.invoice_number
+        inv.invoice_date     = datetime.strptime(form["invoice_date"], "%Y-%m-%d").date() if form.get("invoice_date") else inv.invoice_date
+        inv.due_date         = datetime.strptime(form["due_date"], "%Y-%m-%d").date() if form.get("due_date") else None
+        inv.reference        = form.get("reference","")
+        inv.sales_rep        = form.get("sales_rep","")
+        inv.our_vat_no       = form.get("our_vat_no","")
+        inv.overall_discount = float(form.get("overall_discount") or 0)
+        inv.currency         = form.get("currency","GBP")
+        inv.customer_name    = form.get("customer_name","")
+        inv.customer_address = form.get("customer_address","")
+        inv.customer_vat_no  = form.get("customer_vat_no","")
+        inv.corr_bank        = form.get("corr_bank","")
+        inv.corr_swift       = form.get("corr_swift","")
+        inv.corr_sort        = form.get("corr_sort","")
+        inv.bene_bank        = form.get("bene_bank","")
+        inv.bene_swift       = form.get("bene_swift","")
+        inv.bene_iban        = form.get("bene_iban","")
+        inv.bene_acct_name   = form.get("bene_acct_name","")
+        inv.bene_acct_no     = form.get("bene_acct_no","")
+        inv.any_other_detail = form.get("any_other_detail","")
+        inv.notes            = form.get("notes","")
+        inv.updated_at       = datetime.utcnow()
+        for l in list(inv.lines): db.session.delete(l)
+        db.session.flush()
+        _save_acc_lines(inv, form)
+        db.session.commit()
+        log_activity("Updated", "Acc Invoice", inv.invoice_number)
+        flash("Invoice saved.", "success")
+        return redirect(url_for("acc_invoice_view", inv_id=inv.id))
+    else:
+        inv = AccInvoice(
+            invoice_number   = form.get("invoice_number") or next_acc_invoice_number(),
+            status           = "Draft",
+            invoice_date     = datetime.strptime(form["invoice_date"], "%Y-%m-%d").date() if form.get("invoice_date") else date.today(),
+            due_date         = datetime.strptime(form["due_date"], "%Y-%m-%d").date() if form.get("due_date") else None,
+            reference        = form.get("reference",""), sales_rep=form.get("sales_rep",""),
+            our_vat_no       = form.get("our_vat_no",""),
+            overall_discount = float(form.get("overall_discount") or 0),
+            currency         = form.get("currency","GBP"),
+            customer_name    = form.get("customer_name",""), customer_address=form.get("customer_address",""),
+            customer_vat_no  = form.get("customer_vat_no",""),
+            corr_bank=form.get("corr_bank",""), corr_swift=form.get("corr_swift",""),
+            corr_sort=form.get("corr_sort",""), bene_bank=form.get("bene_bank",""),
+            bene_swift=form.get("bene_swift",""), bene_iban=form.get("bene_iban",""),
+            bene_acct_name=form.get("bene_acct_name",""), bene_acct_no=form.get("bene_acct_no",""),
+            any_other_detail=form.get("any_other_detail",""), notes=form.get("notes",""),
+            created_by=session.get("user_name",""),
+        )
+        db.session.add(inv)
+        db.session.flush()
+        _save_acc_lines(inv, form)
+        db.session.commit()
+        log_activity("Created", "Acc Invoice", f"{inv.invoice_number} for {inv.customer_name}")
+        flash(f"Invoice {inv.invoice_number} created.", "success")
+        return redirect(url_for("acc_invoice_view", inv_id=inv.id))
+
+
+def _save_acc_lines(inv, form):
+    descs   = form.getlist("line_description[]")
+    qtys    = form.getlist("line_quantity[]")
+    prices  = form.getlist("line_unit_price[]")
+    discs   = form.getlist("line_discount_pct[]")
+    vats    = form.getlist("line_vat_rate[]")
+    for i, desc in enumerate(descs):
+        if not desc.strip() and not (qtys[i:i+1] or [""])[0]:
+            continue
+        line = AccInvoiceLine(
+            invoice_id   = inv.id,
+            position     = i,
+            description  = desc,
+            quantity     = float(qtys[i]) if i < len(qtys) and qtys[i] else 1.0,
+            unit_price   = float(prices[i]) if i < len(prices) and prices[i] else 0.0,
+            discount_pct = float(discs[i]) if i < len(discs) and discs[i] else 0.0,
+            vat_rate     = float(vats[i]) if i < len(vats) and vats[i] else 0.0,
+        )
+        db.session.add(line)
 
 
 # ── EXCEL EXPORTS ─────────────────────────────────────────────────────────────

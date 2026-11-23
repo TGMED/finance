@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% block title %}{{ inv.invoice_number }} — TGM Finance{% endblock %}
+{% block content %}
+
+{% if preview %}
+<!-- ── PREVIEW BANNER ── -->
+<div class="no-print" style="background:#fef9c3;border:2px solid #fde047;border-radius:10px;padding:14px 20px;margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;">
+  <div>
+    <strong style="font-size:14px;color:#854d0e;">👁 Preview Mode</strong>
+    <span style="font-size:13px;color:#92400e;margin-left:10px;">This invoice has not been saved yet.</span>
+  </div>
+  <div style="display:flex;gap:10px;">
+    <button onclick="window.close()" class="btn btn-secondary">← Back to Edit</button>
+    <form method="POST" action="{{ url_for('acc_invoice_preview_confirm') }}" style="margin:0;">
+      <button type="submit" class="btn btn-primary">✓ Save Invoice</button>
+    </form>
+  </div>
+</div>
+{% else %}
+<!-- Action bar (screen only) -->
+<div class="no-print" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+  <div style="display:flex;gap:10px;align-items:center;">
+    <a href="{{ url_for('accounting') }}" class="btn btn-secondary">← Accounting</a>
+    <a href="{{ url_for('acc_invoice_edit', inv_id=inv.id) }}" class="btn btn-primary" style="background:#0d9488;">✎ Edit Invoice</a>
+    <button onclick="window.print()" class="btn btn-secondary">🖨 Print / PDF</button>
+  </div>
+
+  <div style="display:flex;gap:8px;align-items:center;">
+    {% set sd = inv.status_display %}
+    {% set sc = {'Draft':'#64748b','Sent':'#0d9488','Paid':'#16a34a','Overdue':'#dc2626','Void':'#94a3b8'}[sd] or '#64748b' %}
+    <span style="font-size:12px;font-weight:700;padding:4px 12px;border-radius:12px;background:{{ sc }}18;color:{{ sc }};">{{ sd }}</span>
+    <form method="POST" action="{{ url_for('acc_invoice_status', inv_id=inv.id) }}" style="display:flex;gap:8px;margin:0;">
+      <select name="status" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:13px;background:var(--card);color:var(--text);">
+        {% for s in ['Draft','Sent','Paid','Void'] %}
+        <option {% if inv.status==s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn-secondary" style="padding:7px 14px;">Update Status</button>
+    </form>
+    <form method="POST" action="{{ url_for('acc_invoice_delete', inv_id=inv.id) }}" style="margin:0;"
+          onsubmit="return confirm('Delete invoice {{ inv.invoice_number }}?');">
+      <button type="submit" class="btn btn-secondary" style="padding:7px 14px;color:#ef4444;">Delete</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<!-- ═══════════════════════════════════════════════════════════
+     PRINTABLE INVOICE — matches Sage One Tax Invoice layout
+═══════════════════════════════════════════════════════════ -->
+<div id="invoice-doc">
+<style>
+  /* Print-specific resets */
+  @media print {
+    .sidebar, .topbar, .no-print, .sidebar-backdrop { display:none!important; }
+    .main-content { margin:0!important; padding:0!important; }
+    #invoice-doc { box-shadow:none; border:none; margin:0; }
+    body { background:#fff!important; }
+    @page { margin:14mm 14mm 14mm 14mm; size:A4; }
+  }
+
+  #invoice-doc {
+    background:#fff;
+    color:#111;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size:11pt;
+    max-width:780px;
+    margin:0 auto;
+    padding:28px 32px 36px;
+    box-shadow:0 2px 24px rgba(0,0,0,.12);
+    border-radius:4px;
+  }
+
+  /* ── TOP HEADER ── */
+  .inv-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:22px; padding-bottom:16px; border-bottom:2px solid #000; }
+  .inv-top h1 { font-size:22pt; font-weight:900; margin:0 0 8px; letter-spacing:-0.5px; }
+  .inv-top .company { font-size:10pt; }
+  .inv-logo img { max-height:60px; }
+  .inv-logo { text-align:right; }
+
+  /* ── ADDRESS + META ROW ── */
+  .inv-meta-row { display:grid; grid-template-columns:1fr 1fr 220px; gap:16px; margin-bottom:18px; padding-bottom:14px; border-bottom:1px solid #ccc; font-size:9.5pt; }
+  .inv-meta-table { width:100%; border-collapse:collapse; font-size:9.5pt; }
+  .inv-meta-table td { padding:2px 6px; vertical-align:top; }
+  .inv-meta-table td:first-child { font-weight:700; white-space:nowrap; }
+
+  /* ── CUSTOMER ── */
+  .inv-customer { background:#f7f8fa; border:1px solid #e0e4ea; padding:10px 14px; margin-bottom:18px; font-size:10pt; }
+  .inv-customer .cust-name { font-weight:800; font-size:11pt; letter-spacing:.3px; }
+
+  /* ── LINE ITEMS TABLE ── */
+  .inv-lines { width:100%; border-collapse:collapse; margin-bottom:0; font-size:9.5pt; }
+  .inv-lines thead tr { background:#111; color:#fff; }
+  .inv-lines thead th { padding:7px 10px; text-align:left; font-weight:700; font-size:9pt; }
+  .inv-lines thead th.r { text-align:right; }
+  .inv-lines tbody td { padding:8px 10px; vertical-align:top; border-bottom:1px solid #e8ecf0; }
+  .inv-lines tbody td.r { text-align:right; }
+  .inv-lines tbody td.desc { white-space:pre-wrap; font-size:9pt; line-height:1.6; }
+  .inv-lines tfoot td { padding:5px 10px; font-size:9pt; }
+
+  /* ── BOTTOM SPLIT: bank | totals ── */
+  .inv-bottom { display:grid; grid-template-columns:1fr 220px; gap:28px; margin-top:0; padding-top:14px; border-top:1px solid #ccc; }
+  .inv-bank { font-size:8.5pt; line-height:1.75; }
+  .inv-bank .bank-row { display:flex; gap:4px; }
+  .inv-bank .bk { font-weight:700; min-width:160px; }
+  .inv-totals { width:100%; border-collapse:collapse; font-size:9.5pt; }
+  .inv-totals td { padding:3px 6px; }
+  .inv-totals td:last-child { text-align:right; font-weight:600; }
+  .inv-totals .grand td { border-top:2px solid #000; padding-top:7px; font-weight:900; font-size:11pt; }
+</style>
+
+  <!-- TOP: Title + Company + Logo -->
+  <div class="inv-top">
+    <div>
+      <h1>Tax Invoice</h1>
+      <div class="company">
+        <strong>TG Marchnata Enterprises</strong><br>
+        {% if inv.our_vat_no %}<span>VAT No: {{ inv.our_vat_no }}</span><br>{% else %}<span>VAT No:</span><br>{% endif %}
+        1, Harold Shodipo Crescent, GRA, Ikeja
+      </div>
+    </div>
+    <div class="inv-logo">
+      <img src="{{ url_for('static', filename='logo.png') }}" alt="TGM" onerror="this.style.display='none'">
+    </div>
+  </div>
+
+  <!-- META ROW: address | blank | invoice details -->
+  <div class="inv-meta-row">
+    <div style="font-size:9.5pt;color:#444;">1, Harold Shodipo Crescent, GRA, Ikeja</div>
+    <div style="font-size:9.5pt;color:#444;">1, Harold Shodipo Crescent, GRA, Ikeja</div>
+    <table class="inv-meta-table">
+      <tr><td>Number:</td><td>{{ inv.invoice_number }}</td></tr>
+      <tr><td>Date:</td><td>{{ inv.invoice_date.strftime('%d/%m/%Y') if inv.invoice_date else '' }}</td></tr>
+      <tr><td>Page:</td><td>1/1</td></tr>
+      <tr><td>Reference:</td><td>{{ inv.reference or '' }}</td></tr>
+      <tr><td>Sales Rep:</td><td>{{ inv.sales_rep or '' }}</td></tr>
+      <tr><td>VAT No:</td><td>{{ inv.our_vat_no or '' }}</td></tr>
+      <tr><td>Due Date</td><td>{{ inv.due_date.strftime('%d/%m/%Y') if inv.due_date else '' }}</td></tr>
+      <tr><td>Overall Discount %:</td><td>{{ "%.2f"|format(inv.overall_discount or 0) }}%</td></tr>
+    </table>
+  </div>
+
+  <!-- Customer -->
+  <div class="inv-customer">
+    <div class="cust-name">{{ inv.customer_name | upper if inv.customer_name else '' }}</div>
+    {% if inv.customer_address %}<div style="font-size:9pt;color:#555;margin-top:3px;">{{ inv.customer_address }}</div>{% endif %}
+    <div style="font-size:9pt;margin-top:4px;"><strong>Customer VAT No:</strong> {{ inv.customer_vat_no or '' }}</div>
+  </div>
+
+  <!-- Line items -->
+  <table class="inv-lines">
+    <thead>
+      <tr>
+        <th style="width:55%;">Description</th>
+        <th class="r" style="width:12%;">Quantity</th>
+        <th class="r" style="width:16%;">Excl. Price</th>
+        <th class="r" style="width:17%;">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in inv.lines %}
+      <tr>
+        <td class="desc">{{ l.description }}</td>
+        <td class="r">{% if l.quantity != 1.0 %}{{ l.quantity }}{% endif %}</td>
+        <td class="r">{{ inv.currency }} {{ "{:,.2f}".format(l.unit_price) }}</td>
+        <td class="r">{{ inv.currency }} {{ "{:,.2f}".format(l.line_total) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Bottom: bank + totals -->
+  <div class="inv-bottom">
+    <!-- Bank details -->
+    <div class="inv-bank">
+      <div class="bank-row"><span class="bk">Correspondent Bank:</span> {{ inv.corr_bank }}</div>
+      <div class="bank-row"><span class="bk">Swift Code:</span> {{ inv.corr_swift }}</div>
+      <div class="bank-row"><span class="bk">Sort Code:</span> {{ inv.corr_sort }}</div>
+      <div class="bank-row"><span class="bk">For Credit Of:</span> {{ inv.bene_bank }}</div>
+      <div class="bank-row"><span class="bk">Beneficiary's Bank Swift Code:</span> {{ inv.bene_swift }}</div>
+      <div class="bank-row"><span class="bk">GTBank's A/C with CitiBank IBAN:</span> {{ inv.bene_iban }}</div>
+      <div class="bank-row"><span class="bk">For Final Credit Of: ................................</span> {{ inv.bene_acct_name }}</div>
+      <div class="bank-row"><span class="bk">Beneficiary's A/C Number: .........................</span> {{ inv.bene_acct_no }}</div>
+      <div class="bank-row"><span class="bk">Any Other Detail: ............................................</span>{{ inv.any_other_detail or '' }}</div>
+    </div>
+
+    <!-- Totals -->
+    <table class="inv-totals">
+      <tr><td>Total Discount:</td><td>{{ inv.currency }} {{ "{:,.2f}".format(inv.discount_amount) }}</td></tr>
+      <tr><td>Total Exclusive:</td><td>{{ inv.currency }} {{ "{:,.2f}".format(inv.total_exclusive) }}</td></tr>
+      <tr><td>Total VAT:</td><td>{{ inv.currency }} {{ "{:,.2f}".format(inv.total_vat) }}</td></tr>
+      <tr><td>Sub Total:</td><td>{{ inv.currency }} {{ "{:,.2f}".format(inv.total_exclusive) }}</td></tr>
+      <tr class="grand"><td>Total:</td><td>{{ inv.currency }} {{ "{:,.2f}".format(inv.total) }}</td></tr>
+    </table>
+  </div>
+
+  {% if inv.notes %}
+  <div style="margin-top:18px;padding-top:12px;border-top:1px solid #e0e4ea;font-size:9pt;color:#555;">
+    <strong>Notes:</strong> {{ inv.notes }}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

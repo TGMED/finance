@@ -1,0 +1,432 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if inv else 'New' }} Invoice — TGM Finance{% endblock %}
+{% block content %}
+
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+  <div>
+    <h1 class="page-title">{{ 'Edit Invoice' if inv else 'New Invoice' }}</h1>
+    <p class="page-sub">{{ inv.invoice_number if inv else next_number }}</p>
+  </div>
+  <a href="{{ url_for('acc_invoice_view', inv_id=inv.id) if inv else url_for('accounting') }}" class="btn btn-secondary">← Cancel</a>
+</div>
+
+<form method="POST" id="inv-form">
+<input type="hidden" name="_edit_id" value="{{ inv.id if inv else '' }}">
+
+  <!-- ── Invoice header ── -->
+  <div class="card" style="padding:24px 28px;margin-bottom:20px;">
+    <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:18px;">Invoice Details</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
+
+      <div class="form-group">
+        <label>Invoice Number</label>
+        <input type="text" name="invoice_number" value="{{ inv.invoice_number if inv else next_number }}" required style="font-weight:700;">
+      </div>
+      <div class="form-group">
+        <label>Invoice Date</label>
+        <input type="date" name="invoice_date" value="{{ (inv.invoice_date.strftime('%Y-%m-%d') if inv and inv.invoice_date else today.strftime('%Y-%m-%d')) }}" required>
+      </div>
+      <div class="form-group">
+        <label>Due Date</label>
+        <input type="date" name="due_date" value="{{ inv.due_date.strftime('%Y-%m-%d') if inv and inv.due_date else '' }}">
+      </div>
+      <div class="form-group">
+        <label>Reference</label>
+        <input type="text" name="reference" value="{{ inv.reference or '' }}" placeholder="e.g. PO-12345">
+      </div>
+      <div class="form-group">
+        <label>Sales Rep</label>
+        <input type="text" name="sales_rep" value="{{ inv.sales_rep or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Our VAT No</label>
+        <input type="text" name="our_vat_no" value="{{ inv.our_vat_no or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Currency</label>
+        <select name="currency">
+          {% for c in ['GBP','USD','EUR','NGN'] %}
+          <option {% if (inv.currency if inv else 'GBP')==c %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Overall Discount %</label>
+        <input type="number" name="overall_discount" step="0.01" min="0" max="100"
+               value="{{ inv.overall_discount or 0 }}" id="disc-pct">
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Customer ── -->
+  <div class="card" style="padding:24px 28px;margin-bottom:20px;">
+    <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:18px;">Customer</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div class="form-group">
+        <label>Customer / Company Name</label>
+        <input type="text" name="customer_name" value="{{ inv.customer_name or '' }}" placeholder="e.g. QUEEN MARGARET UNIVERSITY" required>
+      </div>
+      <div class="form-group">
+        <label>Customer VAT No</label>
+        <input type="text" name="customer_vat_no" value="{{ inv.customer_vat_no or '' }}">
+      </div>
+      <div class="form-group" style="grid-column:1/-1;">
+        <label>Customer Address (optional)</label>
+        <textarea name="customer_address" rows="2" style="resize:vertical;">{{ inv.customer_address or '' }}</textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Line Items ── -->
+  <div class="card" style="padding:24px 28px;margin-bottom:20px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);">Line Items</div>
+      <button type="button" onclick="addLine()" class="btn btn-secondary" style="padding:6px 14px;font-size:12.5px;">+ Add Line</button>
+    </div>
+
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;" id="lines-table">
+        <thead>
+          <tr style="border-bottom:2px solid var(--line);">
+            <th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);min-width:260px;">Description</th>
+            <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);width:80px;">Qty</th>
+            <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);width:120px;">Unit Price</th>
+            <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);width:90px;">Disc %</th>
+            <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);width:90px;">VAT %</th>
+            <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);width:120px;">Total</th>
+            <th style="width:36px;"></th>
+          </tr>
+        </thead>
+        <tbody id="lines-body">
+          {% if inv and inv.lines %}
+            {% for l in inv.lines %}
+            <tr class="line-row" style="border-bottom:1px solid var(--line);">
+              <td style="padding:8px 10px;">
+                <textarea name="line_description[]" rows="4" class="line-desc" style="width:100%;resize:vertical;min-width:240px;font-family:monospace;font-size:12px;">{{ l.description }}</textarea>
+                <button type="button" onclick="openFill(this)" style="margin-top:4px;font-size:11px;color:#0d9488;background:none;border:1px solid #0d9488;border-radius:4px;padding:2px 8px;cursor:pointer;">⚡ Quick Fill</button>
+              </td>
+              <td style="padding:8px 10px;"><input type="number" name="line_quantity[]" step="0.01" value="{{ l.quantity }}" class="line-qty" style="text-align:right;width:70px;" oninput="recalc(this)"></td>
+              <td style="padding:8px 10px;"><input type="number" name="line_unit_price[]" step="0.01" value="{{ l.unit_price }}" class="line-price" style="text-align:right;width:110px;" oninput="recalc(this)"></td>
+              <td style="padding:8px 10px;"><input type="number" name="line_discount_pct[]" step="0.01" value="{{ l.discount_pct }}" class="line-disc" style="text-align:right;width:70px;" oninput="recalc(this)"></td>
+              <td style="padding:8px 10px;"><input type="number" name="line_vat_rate[]" step="0.01" value="{{ l.vat_rate }}" class="line-vat" style="text-align:right;width:70px;" oninput="recalc(this)"></td>
+              <td style="padding:8px 10px;text-align:right;font-weight:700;" class="line-total">{{ "{:,.2f}".format(l.line_total) }}</td>
+              <td style="padding:8px 4px;text-align:center;">
+                <button type="button" onclick="this.closest('tr').remove();updateTotals()" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:16px;" title="Remove">✕</button>
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <!-- one blank line by default -->
+            <tr class="line-row" style="border-bottom:1px solid var(--line);">
+              <td style="padding:8px 10px;">
+                <textarea name="line_description[]" rows="4" class="line-desc" style="width:100%;resize:vertical;min-width:240px;font-family:monospace;font-size:12px;" placeholder="Commission Payment&#10;STUDENT NAME: ...&#10;STUDENT ID: ...&#10;COURSE: ...&#10;TUITION: ...&#10;RATE: ...%&#10;COMMISSION: ..."></textarea>
+                <button type="button" onclick="openFill(this)" style="margin-top:4px;font-size:11px;color:#0d9488;background:none;border:1px solid #0d9488;border-radius:4px;padding:2px 8px;cursor:pointer;">⚡ Quick Fill</button>
+              </td>
+              <td style="padding:8px 10px;"><input type="number" name="line_quantity[]" step="0.01" value="1" class="line-qty" style="text-align:right;width:70px;" oninput="recalc(this)"></td>
+              <td style="padding:8px 10px;"><input type="number" name="line_unit_price[]" step="0.01" value="0" class="line-price" style="text-align:right;width:110px;" oninput="recalc(this)"></td>
+              <td style="padding:8px 10px;"><input type="number" name="line_discount_pct[]" step="0.01" value="0" class="line-disc" style="text-align:right;width:70px;" oninput="recalc(this)"></td>
+              <td style="padding:8px 10px;"><input type="number" name="line_vat_rate[]" step="0.01" value="0" class="line-vat" style="text-align:right;width:70px;" oninput="recalc(this)"></td>
+              <td style="padding:8px 10px;text-align:right;font-weight:700;" class="line-total">0.00</td>
+              <td style="padding:8px 4px;text-align:center;">
+                <button type="button" onclick="this.closest('tr').remove();updateTotals()" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:16px;">✕</button>
+              </td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Totals -->
+    <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+      <table style="font-size:13.5px;width:280px;">
+        <tr><td style="padding:4px 0;color:var(--muted);">Subtotal</td><td style="padding:4px 0;text-align:right;font-weight:600;" id="tot-sub">0.00</td></tr>
+        <tr><td style="padding:4px 0;color:var(--muted);">Discount (<span id="disc-label">0</span>%)</td><td style="padding:4px 0;text-align:right;color:#dc2626;" id="tot-disc">0.00</td></tr>
+        <tr><td style="padding:4px 0;color:var(--muted);">Total Exclusive</td><td style="padding:4px 0;text-align:right;font-weight:600;" id="tot-excl">0.00</td></tr>
+        <tr><td style="padding:4px 0;color:var(--muted);">Total VAT</td><td style="padding:4px 0;text-align:right;" id="tot-vat">0.00</td></tr>
+        <tr style="border-top:2px solid var(--line);">
+          <td style="padding:8px 0 4px;font-weight:800;font-size:15px;">Total</td>
+          <td style="padding:8px 0 4px;text-align:right;font-weight:800;font-size:15px;" id="tot-total">0.00</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Bank Details ── -->
+  <div class="card" style="padding:24px 28px;margin-bottom:20px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);">Bank Details</div>
+      <button type="button" onclick="loadBankModal()" class="btn btn-secondary" style="padding:6px 14px;font-size:12.5px;">↓ Load Saved Profile</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div class="form-group">
+        <label>Correspondent Bank</label>
+        <input type="text" name="corr_bank" value="{{ inv.corr_bank if inv else 'CitiBank, London' }}">
+      </div>
+      <div class="form-group">
+        <label>Swift Code</label>
+        <input type="text" name="corr_swift" value="{{ inv.corr_swift if inv else 'CITIGB2L' }}">
+      </div>
+      <div class="form-group">
+        <label>Sort Code</label>
+        <input type="text" name="corr_sort" value="{{ inv.corr_sort if inv else '185008' }}">
+      </div>
+      <div class="form-group">
+        <label>Beneficiary Bank</label>
+        <input type="text" name="bene_bank" value="{{ inv.bene_bank if inv else 'Guaranty Trust Bank plc, Lagos Nigeria' }}">
+      </div>
+      <div class="form-group">
+        <label>Beneficiary Bank Swift</label>
+        <input type="text" name="bene_swift" value="{{ inv.bene_swift if inv else 'GTBINGLA' }}">
+      </div>
+      <div class="form-group">
+        <label>IBAN</label>
+        <input type="text" name="bene_iban" value="{{ inv.bene_iban if inv else 'GB72 CITI 1850 0850 0808 3157 95' }}">
+      </div>
+      <div class="form-group">
+        <label>Account Name (Final Credit To)</label>
+        <input type="text" name="bene_acct_name" value="{{ inv.bene_acct_name if inv else 'TG MARCHNATA ENTERPRISES' }}">
+      </div>
+      <div class="form-group">
+        <label>Account Number</label>
+        <input type="text" name="bene_acct_no" value="{{ inv.bene_acct_no if inv else '0013872738' }}">
+      </div>
+      <div class="form-group" style="grid-column:1/-1;">
+        <label>Any Other Detail</label>
+        <input type="text" name="any_other_detail" value="{{ inv.any_other_detail or '' }}" placeholder="e.g. SEPT26 COMMISSION QMU">
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Notes ── -->
+  <div class="card" style="padding:24px 28px;margin-bottom:24px;">
+    <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">Internal Notes</div>
+    <textarea name="notes" rows="3" placeholder="Notes visible only to your team…" style="resize:vertical;">{{ inv.notes or '' }}</textarea>
+  </div>
+
+  <div style="display:flex;gap:12px;justify-content:flex-end;padding-bottom:40px;">
+    <a href="{{ url_for('acc_invoice_view', inv_id=inv.id) if inv else url_for('accounting') }}" class="btn btn-secondary">Cancel</a>
+    <button type="button" onclick="previewInvoice()" class="btn btn-secondary" style="border-color:#0d9488;color:#0d9488;">👁 Preview</button>
+    <button type="submit" class="btn btn-primary">{{ 'Save Changes' if inv else 'Create Invoice' }}</button>
+  </div>
+</form>
+
+<script>
+function addLine() {
+  const tbody = document.getElementById('lines-body');
+  const tr = document.createElement('tr');
+  tr.className = 'line-row';
+  tr.style.borderBottom = '1px solid var(--line)';
+  tr.innerHTML = `
+    <td style="padding:8px 10px"><textarea name="line_description[]" rows="3" style="width:100%;resize:vertical;min-width:240px;" placeholder="Description"></textarea></td>
+    <td style="padding:8px 10px"><input type="number" name="line_quantity[]" step="0.01" value="1" class="line-qty" style="text-align:right;width:70px" oninput="recalc(this)"></td>
+    <td style="padding:8px 10px"><input type="number" name="line_unit_price[]" step="0.01" value="0" class="line-price" style="text-align:right;width:110px" oninput="recalc(this)"></td>
+    <td style="padding:8px 10px"><input type="number" name="line_discount_pct[]" step="0.01" value="0" class="line-disc" style="text-align:right;width:70px" oninput="recalc(this)"></td>
+    <td style="padding:8px 10px"><input type="number" name="line_vat_rate[]" step="0.01" value="0" class="line-vat" style="text-align:right;width:70px" oninput="recalc(this)"></td>
+    <td style="padding:8px 10px;text-align:right;font-weight:700" class="line-total">0.00</td>
+    <td style="padding:8px 4px;text-align:center"><button type="button" onclick="this.closest('tr').remove();updateTotals()" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:16px">✕</button></td>
+  `;
+  tbody.appendChild(tr);
+}
+
+function recalc(input) {
+  const row   = input.closest('tr');
+  const qty   = parseFloat(row.querySelector('.line-qty').value)   || 0;
+  const price = parseFloat(row.querySelector('.line-price').value) || 0;
+  const disc  = parseFloat(row.querySelector('.line-disc').value)  || 0;
+  const vat   = parseFloat(row.querySelector('.line-vat').value)   || 0;
+  const sub   = qty * price;
+  const after = sub - (sub * disc / 100);
+  row.querySelector('.line-total').textContent = after.toFixed(2);
+  updateTotals();
+}
+
+function updateTotals() {
+  let sub = 0;
+  document.querySelectorAll('.line-total').forEach(el => { sub += parseFloat(el.textContent) || 0; });
+  const discPct = parseFloat(document.getElementById('disc-pct').value) || 0;
+  const disc    = sub * discPct / 100;
+  const excl    = sub - disc;
+  // vat per line
+  let vatTotal = 0;
+  document.querySelectorAll('.line-row').forEach(row => {
+    const lt  = parseFloat(row.querySelector('.line-total')?.textContent) || 0;
+    const vr  = parseFloat(row.querySelector('.line-vat')?.value) || 0;
+    vatTotal += lt * vr / 100;
+  });
+  const total = excl + vatTotal;
+  document.getElementById('tot-sub').textContent   = sub.toFixed(2);
+  document.getElementById('disc-label').textContent = discPct.toFixed(2);
+  document.getElementById('tot-disc').textContent  = disc.toFixed(2);
+  document.getElementById('tot-excl').textContent  = excl.toFixed(2);
+  document.getElementById('tot-vat').textContent   = vatTotal.toFixed(2);
+  document.getElementById('tot-total').textContent = total.toFixed(2);
+}
+
+document.getElementById('disc-pct').addEventListener('input', updateTotals);
+updateTotals();
+
+// ── Quick Fill modal ──
+var _fillTarget = null;
+function openFill(btn) {
+  _fillTarget = btn.previousElementSibling; // the textarea
+  document.getElementById('qf-modal').style.display = 'flex';
+  // pre-parse existing textarea content
+  var txt = _fillTarget.value;
+  function getVal(key) {
+    var m = txt.match(new RegExp(key + ':\\s*(.+)', 'i'));
+    return m ? m[1].trim() : '';
+  }
+  document.getElementById('qf-title').value     = txt.split('\n')[0] || 'Commission Payment';
+  document.getElementById('qf-student').value   = getVal('STUDENT NAME');
+  document.getElementById('qf-sid').value        = getVal('STUDENT ID');
+  document.getElementById('qf-course').value     = getVal('COURSE');
+  document.getElementById('qf-tuition').value    = getVal('TUITION');
+  document.getElementById('qf-rate').value       = getVal('RATE').replace('%','');
+  document.getElementById('qf-commission').value = getVal('COMMISSION');
+  document.getElementById('qf-extra').value      = '';
+}
+function applyFill() {
+  var title      = document.getElementById('qf-title').value.trim();
+  var student    = document.getElementById('qf-student').value.trim();
+  var sid        = document.getElementById('qf-sid').value.trim();
+  var course     = document.getElementById('qf-course').value.trim();
+  var tuition    = document.getElementById('qf-tuition').value.trim();
+  var rate       = document.getElementById('qf-rate').value.trim();
+  var commission = document.getElementById('qf-commission').value.trim();
+  var extra      = document.getElementById('qf-extra').value.trim();
+  var lines = [title];
+  if (student)    lines.push('STUDENT NAME: ' + student.toUpperCase());
+  if (sid)        lines.push('STUDENT ID: '   + sid);
+  if (course)     lines.push('COURSE: '       + course.toUpperCase());
+  if (tuition)    lines.push('TUITION: '      + tuition);
+  if (rate)       lines.push('RATE: '         + rate + '%');
+  if (commission) lines.push('COMMISSION: '   + commission);
+  if (extra)      lines.push(extra);
+  _fillTarget.value = lines.join('\n');
+  // also auto-fill unit_price from commission if blank
+  var row = _fillTarget.closest('tr');
+  var priceInput = row.querySelector('.line-price');
+  if (commission && (!priceInput.value || priceInput.value == '0')) {
+    priceInput.value = parseFloat(commission.replace(/,/g,'')) || 0;
+    recalc(priceInput);
+  }
+  closeFill();
+}
+function closeFill() {
+  document.getElementById('qf-modal').style.display = 'none';
+  _fillTarget = null;
+}
+
+// ── Preview ──
+function previewInvoice() {
+  var form = document.getElementById('inv-form');
+  var origAction = form.action;
+  var origTarget = form.target;
+  form.action = '{{ url_for("acc_invoice_preview") }}';
+  form.target = '_blank';
+  form.submit();
+  form.action = origAction;
+  form.target = origTarget;
+}
+
+// ── Load bank profile ──
+function loadBankModal() {
+  fetch('{{ url_for("acc_banks_json") }}')
+    .then(r => r.json())
+    .then(profiles => {
+      if (!profiles.length) {
+        alert('No saved bank profiles yet. Add one from the Accounting page → Bank Accounts tab.');
+        return;
+      }
+      var modal = document.getElementById('bank-load-modal');
+      var list  = document.getElementById('bank-profile-list');
+      list.innerHTML = profiles.map(p =>
+        '<div onclick="applyBankProfile(' + JSON.stringify(JSON.stringify(p)) + ')" style="padding:12px 16px;border-bottom:1px solid var(--line);cursor:pointer;border-radius:4px;" onmouseover="this.style.background=\'var(--card)\'" onmouseout="this.style.background=\'\'">' +
+          '<strong style="font-size:13.5px;">' + p.name + '</strong>' +
+          (p.is_default ? ' <span style="font-size:10px;color:#16a34a;font-weight:700;margin-left:6px;">DEFAULT</span>' : '') +
+          '<div style="font-size:11.5px;color:var(--muted);margin-top:3px;">' + (p.bene_iban || p.bene_acct_no || '') + '</div>' +
+        '</div>'
+      ).join('');
+      modal.style.display = 'flex';
+    });
+}
+function applyBankProfile(json) {
+  var p = JSON.parse(json);
+  document.querySelector('[name=corr_bank]').value      = p.corr_bank      || '';
+  document.querySelector('[name=corr_swift]').value     = p.corr_swift     || '';
+  document.querySelector('[name=corr_sort]').value      = p.corr_sort      || '';
+  document.querySelector('[name=bene_bank]').value      = p.bene_bank      || '';
+  document.querySelector('[name=bene_swift]').value     = p.bene_swift     || '';
+  document.querySelector('[name=bene_iban]').value      = p.bene_iban      || '';
+  document.querySelector('[name=bene_acct_name]').value = p.bene_acct_name || '';
+  document.querySelector('[name=bene_acct_no]').value   = p.bene_acct_no   || '';
+  document.getElementById('bank-load-modal').style.display = 'none';
+}
+</script>
+
+<!-- Bank profile load modal -->
+<div id="bank-load-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:var(--bg);border-radius:14px;width:420px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid var(--line);">
+      <strong style="font-size:14.5px;">Select a Bank Profile</strong>
+      <button onclick="document.getElementById('bank-load-modal').style.display='none'" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);">✕</button>
+    </div>
+    <div id="bank-profile-list" style="max-height:340px;overflow-y:auto;"></div>
+    <div style="padding:12px 16px;border-top:1px solid var(--line);">
+      <a href="{{ url_for('accounting') }}#banks" target="_blank" style="font-size:12.5px;color:#0d9488;text-decoration:none;">+ Manage bank profiles</a>
+    </div>
+  </div>
+</div>
+
+<!-- Quick Fill Modal -->
+<div id="qf-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:var(--bg);border-radius:14px;padding:28px 32px;width:460px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <strong style="font-size:15px;">⚡ Quick Fill Line Description</strong>
+      <button onclick="closeFill()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:11px;">
+      <div class="form-group" style="margin:0;">
+        <label style="font-size:12px;">Title / Type</label>
+        <input id="qf-title" type="text" value="Commission Payment">
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label style="font-size:12px;">Student Name</label>
+        <input id="qf-student" type="text" placeholder="UWAIFO NOSAKHARE">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px;">
+        <div class="form-group" style="margin:0;">
+          <label style="font-size:12px;">Student ID</label>
+          <input id="qf-sid" type="text" placeholder="26010132">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label style="font-size:12px;">Rate (%)</label>
+          <input id="qf-rate" type="number" step="0.01" placeholder="17">
+        </div>
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label style="font-size:12px;">Course</label>
+        <input id="qf-course" type="text" placeholder="MSC INTERNATIONAL MANAGEMENT...">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px;">
+        <div class="form-group" style="margin:0;">
+          <label style="font-size:12px;">Tuition Amount</label>
+          <input id="qf-tuition" type="text" placeholder="15455">
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label style="font-size:12px;">Commission Amount</label>
+          <input id="qf-commission" type="text" placeholder="2627.35">
+        </div>
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label style="font-size:12px;">Any extra lines (optional)</label>
+        <textarea id="qf-extra" rows="2" placeholder="Additional notes for this line…" style="resize:vertical;"></textarea>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+      <button type="button" onclick="closeFill()" class="btn btn-secondary">Cancel</button>
+      <button type="button" onclick="applyFill()" class="btn btn-primary">Apply</button>
+    </div>
+  </div>
+</div>
+{% endblock %}

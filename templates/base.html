@@ -60,7 +60,17 @@
       Students
     </a>
 
-    <a href="{{ url_for('invoices') }}" class="nav-link {% if 'invoice' in request.endpoint %}active{% endif %}">
+    <a href="{{ url_for('accounting') }}" class="nav-link {% if 'acc_invoice' in request.endpoint or request.endpoint == 'accounting' %}active{% endif %}">
+      <span class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="5" width="20" height="14" rx="2"/>
+          <path d="M2 10h20"/><path d="M6 15h2M10 15h4"/>
+        </svg>
+      </span>
+      Accounting
+    </a>
+
+    <a href="{{ url_for('invoices') }}" class="nav-link {% if 'invoice' in request.endpoint and 'acc' not in request.endpoint %}active{% endif %}">
       <span class="nav-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <rect x="2" y="3" width="20" height="14" rx="2"/>

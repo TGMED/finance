@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}Accounting — TGM Finance{% endblock %}
+{% block content %}
+<div class="page-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+  <div>
+    <h1 class="page-title">Accounting</h1>
+    <p class="page-sub">Tax invoices · bank profiles · payments</p>
+  </div>
+  <a href="{{ url_for('acc_invoice_new') }}" class="btn btn-primary">+ New Invoice</a>
+</div>
+
+<!-- Tabs -->
+<div style="display:flex;gap:0;border-bottom:2px solid var(--line);margin-bottom:28px;">
+  <button onclick="switchTab('invoices')" id="tab-invoices"
+    style="padding:10px 22px;font-size:13.5px;font-weight:700;border:none;border-bottom:3px solid #0d9488;margin-bottom:-2px;background:none;color:#0d9488;cursor:pointer;">
+    Invoices
+  </button>
+  <button onclick="switchTab('banks')" id="tab-banks"
+    style="padding:10px 22px;font-size:13.5px;font-weight:700;border:none;border-bottom:3px solid transparent;margin-bottom:-2px;background:none;color:var(--muted);cursor:pointer;">
+    Bank Accounts
+  </button>
+</div>
+
+<!-- ══════════════════ INVOICES TAB ══════════════════ -->
+<div id="pane-invoices">
+
+  <!-- Summary cards -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;">
+    {% set cards = [
+      ('Draft',   totals.draft,   '#64748b', '#f1f5f9'),
+      ('Sent',    totals.sent,    '#0d9488', '#f0fdfa'),
+      ('Paid',    totals.paid,    '#16a34a', '#f0fdf4'),
+      ('Overdue', totals.overdue, '#dc2626', '#fef2f2'),
+    ] %}
+    {% for label,val,col,bg in cards %}
+    <a href="{{ url_for('accounting', status=label) }}" style="background:{{ bg }};border:1.5px solid {{ col }}22;border-radius:12px;padding:18px 20px;text-decoration:none;display:block;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:{{ col }};margin-bottom:6px;">{{ label }}</div>
+      <div style="font-size:22px;font-weight:800;color:{{ col }};">£{{ "{:,.2f}".format(val) }}</div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <!-- Filter bar -->
+  <form method="GET" style="display:flex;gap:8px;margin-bottom:18px;">
+    <input name="q" value="{{ q }}" placeholder="Search invoice #, customer, reference…"
+      style="flex:1;padding:9px 14px;border:1.5px solid var(--line);border-radius:8px;font-size:13.5px;background:var(--card);color:var(--text);">
+    <select name="status" style="padding:9px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:13.5px;background:var(--card);color:var(--text);">
+      <option value="">All statuses</option>
+      {% for s in ['Draft','Sent','Paid','Void'] %}
+      <option {% if status_f==s %}selected{% endif %} value="{{ s }}">{{ s }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn-secondary" type="submit">Filter</button>
+    {% if q or status_f %}<a href="{{ url_for('accounting') }}" class="btn btn-secondary">Clear</a>{% endif %}
+  </form>
+
+  <div class="card" style="overflow:hidden;">
+    <table style="width:100%;border-collapse:collapse;font-size:13.5px;">
+      <thead>
+        <tr style="background:var(--card);border-bottom:2px solid var(--line);">
+          <th style="padding:11px 16px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);">Invoice #</th>
+          <th style="padding:11px 16px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);">Customer</th>
+          <th style="padding:11px 16px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);">Date</th>
+          <th style="padding:11px 16px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);">Due</th>
+          <th style="padding:11px 16px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);">Total</th>
+          <th style="padding:11px 16px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);">Status</th>
+          <th style="padding:11px 16px;text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for inv in invoices %}
+      {% set sd = inv.status_display %}
+      {% set sc = {'Draft':'#64748b','Sent':'#0d9488','Paid':'#16a34a','Overdue':'#dc2626','Void':'#94a3b8'}[sd] or '#64748b' %}
+      <tr style="border-bottom:1px solid var(--line);" onmouseover="this.style.background='var(--card)'" onmouseout="this.style.background=''">
+        <td style="padding:12px 16px;font-weight:700;">
+          <a href="{{ url_for('acc_invoice_view', inv_id=inv.id) }}" style="color:var(--text);text-decoration:none;">{{ inv.invoice_number }}</a>
+        </td>
+        <td style="padding:12px 16px;">{{ inv.customer_name or '—' }}</td>
+        <td style="padding:12px 16px;color:var(--muted);">{{ inv.invoice_date.strftime('%d %b %Y') if inv.invoice_date else '—' }}</td>
+        <td style="padding:12px 16px;color:{% if inv.is_overdue %}#dc2626{% else %}var(--muted){% endif %};">{{ inv.due_date.strftime('%d %b %Y') if inv.due_date else '—' }}</td>
+        <td style="padding:12px 16px;text-align:right;font-weight:700;">{{ inv.currency }} {{ "{:,.2f}".format(inv.total) }}</td>
+        <td style="padding:12px 16px;">
+          <span style="font-size:11.5px;font-weight:700;padding:3px 10px;border-radius:12px;background:{{ sc }}18;color:{{ sc }};">{{ sd }}</span>
+        </td>
+        <td style="padding:12px 16px;text-align:right;white-space:nowrap;">
+          <a href="{{ url_for('acc_invoice_view', inv_id=inv.id) }}" style="font-size:12.5px;color:#0d9488;text-decoration:none;font-weight:600;margin-right:12px;">View</a>
+          <a href="{{ url_for('acc_invoice_edit', inv_id=inv.id) }}" style="font-size:12.5px;color:#0d9488;text-decoration:none;font-weight:600;">✎ Edit</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" style="padding:40px;text-align:center;color:var(--muted);">No invoices yet. <a href="{{ url_for('acc_invoice_new') }}" style="color:#0d9488;">Create one →</a></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══════════════════ BANK ACCOUNTS TAB ══════════════════ -->
+<div id="pane-banks" style="display:none;">
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+    <p style="color:var(--muted);font-size:13.5px;">Save your bank details here and load them into any invoice with one click.</p>
+    <button onclick="document.getElementById('new-bank-form').style.display='block';this.style.display='none';" class="btn btn-primary">+ Add Bank Account</button>
+  </div>
+
+  <!-- New / add form -->
+  <div id="new-bank-form" style="display:none;" class="card" style="padding:24px 28px;margin-bottom:24px;">
+    <form method="POST" action="{{ url_for('acc_bank_save') }}">
+      <input type="hidden" name="profile_id" id="edit-profile-id" value="">
+      <div style="font-size:13px;font-weight:700;margin-bottom:16px;" id="bank-form-title">New Bank Account</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div class="form-group" style="grid-column:1/-1;">
+          <label>Profile Name <span style="color:#ef4444;">*</span></label>
+          <input type="text" name="name" id="bp-name" placeholder="e.g. TGM GBP Account" required>
+        </div>
+        <div class="form-group"><label>Correspondent Bank</label><input type="text" name="corr_bank" id="bp-corr-bank" placeholder="CitiBank, London"></div>
+        <div class="form-group"><label>Swift Code</label><input type="text" name="corr_swift" id="bp-corr-swift" placeholder="CITIGB2L"></div>
+        <div class="form-group"><label>Sort Code</label><input type="text" name="corr_sort" id="bp-corr-sort" placeholder="185008"></div>
+        <div class="form-group"><label>Beneficiary Bank</label><input type="text" name="bene_bank" id="bp-bene-bank" placeholder="Guaranty Trust Bank plc, Lagos Nigeria"></div>
+        <div class="form-group"><label>Beneficiary Bank Swift</label><input type="text" name="bene_swift" id="bp-bene-swift" placeholder="GTBINGLA"></div>
+        <div class="form-group"><label>IBAN</label><input type="text" name="bene_iban" id="bp-bene-iban" placeholder="GB72 CITI 1850 0850 0808 3157 95"></div>
+        <div class="form-group"><label>Account Name (Final Credit To)</label><input type="text" name="bene_acct_name" id="bp-acct-name" placeholder="TG MARCHNATA ENTERPRISES"></div>
+        <div class="form-group"><label>Account Number</label><input type="text" name="bene_acct_no" id="bp-acct-no" placeholder="0013872738"></div>
+        <div class="form-group" style="grid-column:1/-1;display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" name="is_default" id="bp-default" value="1" style="width:auto;">
+          <label for="bp-default" style="margin:0;font-weight:600;">Set as default (auto-loads in new invoices)</label>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:16px;">
+        <button type="submit" class="btn btn-primary">Save Profile</button>
+        <button type="button" onclick="closeBankForm()" class="btn btn-secondary">Cancel</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Existing profiles -->
+  {% if bank_profiles %}
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;">
+    {% for p in bank_profiles %}
+    <div class="card" style="padding:20px 22px;position:relative;">
+      {% if p.is_default %}
+      <span style="position:absolute;top:14px;right:14px;font-size:10.5px;font-weight:700;color:#16a34a;background:#f0fdf4;border:1px solid #bbf7d0;padding:2px 8px;border-radius:10px;">Default</span>
+      {% endif %}
+      <div style="font-size:15px;font-weight:800;margin-bottom:12px;color:var(--text);">{{ p.name }}</div>
+      <div style="font-size:11.5px;color:var(--muted);line-height:1.9;">
+        {% if p.corr_bank %}<div><strong>Correspondent:</strong> {{ p.corr_bank }} ({{ p.corr_swift }})</div>{% endif %}
+        {% if p.bene_bank %}<div><strong>Beneficiary Bank:</strong> {{ p.bene_bank }}</div>{% endif %}
+        {% if p.bene_iban %}<div><strong>IBAN:</strong> {{ p.bene_iban }}</div>{% endif %}
+        {% if p.bene_acct_name %}<div><strong>A/C Name:</strong> {{ p.bene_acct_name }}</div>{% endif %}
+        {% if p.bene_acct_no %}<div><strong>A/C No:</strong> {{ p.bene_acct_no }}</div>{% endif %}
+      </div>
+      <div style="display:flex;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line);">
+        <button onclick="editProfile({{ p.id }}, {{ p|tojson }})" style="font-size:12px;color:#0d9488;background:none;border:none;cursor:pointer;font-weight:600;padding:0;">✎ Edit</button>
+        <form method="POST" action="{{ url_for('acc_bank_delete', bid=p.id) }}" style="margin:0;" onsubmit="return confirm('Delete this profile?')">
+          <button type="submit" style="font-size:12px;color:#ef4444;background:none;border:none;cursor:pointer;font-weight:600;padding:0;">Delete</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:48px;color:var(--muted);">
+    No bank profiles saved yet.<br>
+    <button onclick="document.getElementById('new-bank-form').style.display='block';" style="margin-top:14px;" class="btn btn-primary">+ Add your first bank account</button>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+function switchTab(tab) {
+  ['invoices','banks'].forEach(t => {
+    document.getElementById('pane-' + t).style.display  = t === tab ? '' : 'none';
+    var btn = document.getElementById('tab-' + t);
+    btn.style.borderBottomColor = t === tab ? '#0d9488' : 'transparent';
+    btn.style.color             = t === tab ? '#0d9488' : 'var(--muted)';
+  });
+  if (tab === 'banks') history.replaceState(null,'',location.pathname + '#banks');
+}
+
+function closeBankForm() {
+  var f = document.getElementById('new-bank-form');
+  f.style.display = 'none';
+  f.querySelector('form').reset();
+  document.getElementById('edit-profile-id').value = '';
+  document.getElementById('bank-form-title').textContent = 'New Bank Account';
+}
+
+function editProfile(id, p) {
+  document.getElementById('edit-profile-id').value = id;
+  document.getElementById('bp-name').value        = p.name        || '';
+  document.getElementById('bp-corr-bank').value   = p.corr_bank   || '';
+  document.getElementById('bp-corr-swift').value  = p.corr_swift  || '';
+  document.getElementById('bp-corr-sort').value   = p.corr_sort   || '';
+  document.getElementById('bp-bene-bank').value   = p.bene_bank   || '';
+  document.getElementById('bp-bene-swift').value  = p.bene_swift  || '';
+  document.getElementById('bp-bene-iban').value   = p.bene_iban   || '';
+  document.getElementById('bp-acct-name').value   = p.bene_acct_name || '';
+  document.getElementById('bp-acct-no').value     = p.bene_acct_no  || '';
+  document.getElementById('bp-default').checked   = p.is_default  || false;
+  document.getElementById('bank-form-title').textContent = 'Edit Bank Account';
+  document.getElementById('new-bank-form').style.display = 'block';
+  document.getElementById('new-bank-form').scrollIntoView({behavior:'smooth'});
+}
+
+// Auto-switch to banks tab if URL hash is #banks
+if (location.hash === '#banks') switchTab('banks');
+</script>
+{% endblock %}
